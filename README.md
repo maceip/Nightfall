@@ -40,7 +40,10 @@ Nightfall/
 ## Quickstart
 
 ```bash
-# Optional: build/update Microsoft LiteBox (litebox_runner_linux_userland, litebox_packager, litebox_syscall_rewriter)
+# Build Microsoft LiteBox (litebox_runner_linux_userland, litebox_packager, litebox_syscall_rewriter).
+# Required for `pnpm test` to pass: 9 sandbox tests assert the LiteBox backend. Needs Linux x86_64,
+# git, python3 and a current stable Rust (the script runs `rustup update stable`). Installs to
+# ~/.local/share/nightfall/litebox; override with NIGHTFALL_LITEBOX_ROOT / NIGHTFALL_LITEBOX_BIN_DIR.
 ./infra/litebox/build-litebox.sh
 
 # Install workspace dependencies

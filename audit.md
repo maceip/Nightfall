@@ -267,39 +267,41 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 - Required change: add an explicit open-source or commercial license; add `CONTRIBUTING.md` and
   `SECURITY.md`.
 
-### 4.2 — S1 — CI runs the test suite and it is red (the suite hard-requires the unprovisionable LiteBox toolchain)
-- Correction to an earlier draft of this item: CI does exist and does run the code.
-  `.github/workflows/desktop-debug-installers.yml` defines a job
-  `Typecheck, Unit/E2E Tests & Bundle Audit` that runs `pnpm typecheck` and `pnpm test` on both
-  `push` and `pull_request` (lines 3-8, 46, 72-76).
-- Evidence: that job fails — 9 tests across 6 files fail because they assert the LiteBox backend is
-  present/selected rather than the real fallback:
-  `expect(proposal.sandboxBackend).toBe('microsoft-litebox')`
-  (`services/defense-factory/src/defenseFactory.test.ts:281`);
-  `expect(boot.sandboxToolchain.available).toBe(true)`
-  (`services/api-gateway/src/apiGateway.test.ts:38`,
-  `services/closed-loop-orchestrator/src/orchestrator.test.ts:54`,
-  `packages/sandbox-runtime/src/sandbox-runtime.test.ts:29,47` and strict-mode `:94`);
-  the CLI status expects `Microsoft LiteBox (ready` (`apps/nightfall-cli/src/cli.test.ts:84`); the
-  benchmark suite expects `microsoft-litebox` (`benchmarks/testbeds/src/benchmarks.test.ts:283,366`).
-  Because the LiteBox binaries cannot be provisioned (see 4.3), the runtime correctly falls back to
-  `process-confined`, so the suite is red anywhere the binaries are absent — i.e. in CI and on any
-  normal install. The test suite encodes the very overclaim it should be catching.
-- Required change: make the required check pass honestly — either ship a reproducible LiteBox
-  provisioning path and gate the LiteBox-specific assertions on its real availability, or rewrite the
-  tests to assert the real `process-confined` backend and drop the LiteBox assertions (ties to 4.3
-  and to the claims-vs-reality remediation). Keep `pnpm typecheck` + `pnpm test` as required,
-  green PR checks thereafter.
+### 4.2 — S1 (fixed in this PR) — CI ran the test suite without building the toolchain it requires
+- Correction: earlier drafts of this item said first that CI did not exist, then that LiteBox was
+  unprovisionable. Both were wrong. `.github/workflows/desktop-debug-installers.yml` runs
+  `pnpm typecheck` and `pnpm test` on push and pull request, and LiteBox builds from the pinned commit.
+- Evidence: 9 tests in 6 files assert the LiteBox backend (`sandbox-runtime.test.ts:29,47,94`,
+  `defenseFactory.test.ts:281`, `apiGateway.test.ts:38`, `orchestrator.test.ts:54`, `cli.test.ts:84`,
+  `benchmarks.test.ts:283,366`), but the `verify` job never ran `infra/litebox/build-litebox.sh`, so
+  the runtime fell back to `process-confined` and those tests failed on every run, including `main`.
+  A second cause hid behind it: the script invoked `cargo` from outside the checkout and LiteBox
+  tracks current stable Rust, so an older stable fails with `E0658` (`map_or_default`).
+- Verified: with the toolchain built, all 44 tests in 15 files pass locally.
+- Fix applied: the `verify` job now builds LiteBox (cached on the script hash) and checks the three
+  binaries exist before testing; the script refreshes stable Rust and builds from inside the checkout;
+  the README states the requirement.
+- Still required: pin the Rust toolchain version and verify the built binaries by digest (5.5); decide
+  whether contributors on macOS/Windows should get skipped LiteBox tests rather than failures.
 
-### 4.3 — S1 — "Microsoft LiteBox" isolation is claimed but silently downgraded
-- Evidence: the sandbox falls back to `process-confined` whenever the LiteBox binaries are absent
-  (`packages/sandbox-runtime/src/index.ts:754-768`); the pinned toolchain
-  (`LITEBOX_PINNED_COMMIT`, `:10`) is not a provisionable public artifact and
-  `infra/litebox/build-litebox.sh` cannot produce it. Every "isolated inside Microsoft LiteBox"
-  claim (README, settings page, teardown attestation) then describes an ordinary host child process.
-- Required change: either ship a reproducible LiteBox provisioning path and fail closed in strict
-  mode, or drop the LiteBox branding and describe the real `process-confined` backend honestly in
-  the UI and attestations.
+### 4.3 — S1 — LiteBox isolation is real but partial, and its absence is silent
+- Correction: an earlier draft said LiteBox never runs. It does: built from the pinned commit, Python
+  workloads execute inside it and a host file read is blocked (`sandbox-runtime.test.ts:47-61`).
+- Evidence of what remains:
+  - The default mode `litebox-preferred` falls back to an ordinary child process with no warning when
+    the binaries are missing (`packages/sandbox-runtime/src/index.ts:754-795`). That is every macOS
+    and Windows desktop install and any Linux host that has not run the build script.
+  - Node workloads are never run in LiteBox even when it is available (`isMultiThreadedV8Runtime`,
+    `:358-361,754-759`), so every JavaScript/TypeScript two-stage proof and every Red Team replay
+    script is `process-confined`; `git clone` is explicitly `process-confined`
+    (`services/defense-factory/src/repositoryScanner.ts:654-665`).
+  - The runner is invoked with `--unstable` (`:248`), and the build is not reproducible (floating
+    stable Rust, no digest check).
+  - A sandbox that never executed anything is attested as `microsoft-litebox` if the toolchain is
+    merely present (`:826-830`).
+- Required change: fail closed (or warn loudly in UI and attestation) when isolation is unavailable;
+  isolate Node workloads by another real mechanism; state per platform and per language which backend
+  actually ran; attest only what executed.
 
 ### 4.4 — S2 — Declared Node floor is wrong
 - Evidence: `engines.node: ">=22.0.0"` (root `package.json`), but `node:sqlite` (`DatabaseSync`,
@@ -499,7 +501,7 @@ in `README.md`, `AGENTS.md`, `docs/`, or the UI, against what the code does at t
 
 | Claim | Reality | Reference |
 | --- | --- | --- |
-| "Isolated with Microsoft LiteBox" | Never runs; every execution is `process-confined` | GAP-20 |
+| "Isolated with Microsoft LiteBox" | True for Python on Linux with the toolchain built; Node workloads and other platforms are `process-confined`, silently | 4.3, GAP-20 |
 | "Zero runtime mock fallbacks" | Findings, patches and model output are fixtures/fallbacks | §0, GAP-08, GAP-10 |
 | "Confirm real weaknesses with reproducible `EvidenceBundle` proofs" | Two hardcoded findings; sandbox re-asserts host values | GAP-04, GAP-13 |
 | "Ed25519-signed `campaign.yaml` enforces scope" | Self-signed by the runner; redirects not re-checked | 1.1, 1.7 |
@@ -663,17 +665,14 @@ requires). Severity reuses the legend above.
   branch/PR is never merged. Real-state: a real verified merge, with state advanced only on confirmation
   and closure run against the resulting revision (see 2.7).
 
-### 6.G — Sandbox / Microsoft LiteBox (claimed isolation never occurs)
+### 6.G — Sandbox / Microsoft LiteBox (isolation is partial and silently absent)
 
-- **GAP-20 — S1 — LiteBox isolation is never actually used; every run is `process-confined`.** The
-  toolchain is absent (binaries not provisionable; `infra/litebox/build-litebox.sh` does a real clone
-  + `cargo build` but depends on an upstream repo/commit/crate layout that is not guaranteed to exist
-  and is never built or cached in CI), so `discoverLiteBoxToolchainSync` returns unavailable and
-  execution falls back (`packages/sandbox-runtime/src/index.ts:143-225`, `:754-768`). The runtime
-  labels the backend honestly, but the README, the settings screen copy, the fix-proposal subtitle
-  logic (`defenseFactoryEngine.ts:434-437`), and the test suite all assert LiteBox isolation that does
-  not happen (the 9 CI failures in §4.2). Real-state: either ship a reproducible LiteBox toolchain and
-  fail-closed in strict mode, or drop the LiteBox branding everywhere and describe the real backend.
+- **GAP-20 — S1 — LiteBox isolation is claimed universally but applies to a subset.** Corrected: the
+  toolchain builds and Python workloads do run inside LiteBox. The gap is that README, settings copy
+  and fix subtitles present it as the isolation for everything, while Node/TypeScript proofs, Red Team
+  replay scripts and `git clone` always run `process-confined`, and all workloads do on macOS, Windows
+  or any host without the built binaries — silently (see 4.3). Real-state: fail closed or disclose the
+  backend per run, and give non-Python workloads real isolation.
 - **GAP-36 — S1 — The "zero-egress LiteBox runner pool" is an idle container.** The compose file
   declares `litebox-sandbox-runner` on an `internal: true` network (`infra/deploy/docker-compose.yml:38-53`),
   but its image's command is `litebox_runner_linux_userland --help` (`infra/litebox/Dockerfile.litebox`,
@@ -750,7 +749,7 @@ requires). Severity reuses the legend above.
   (`defenseFactory.test.ts:281`, `sandbox-runtime.test.ts:52,57,61,99`, `apiGateway.test.ts:53`), and
   `finding.status === 'fixed'` after the no-op merge (`orchestrator.test.ts:133`,
   `benchmarks.test.ts:298,312`). The green path validates the fabrications, real behavior has no coverage,
-  and the LiteBox assertions are what keep CI red (4.2). Real-state: tests assert real discovery, an
+  and the LiteBox assertions failed in CI until the toolchain build was added (4.2). Real-state: tests assert real discovery, an
   actually-available sandbox backend, and a real merge/verification outcome — closing the gaps requires
   rewriting the suite.
 

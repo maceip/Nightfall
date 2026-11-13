@@ -69,6 +69,23 @@ jobs:
       - name: Generate desktop icon & DMG assets
         run: node scripts/generate-desktop-icons.mjs
 
+      - name: Restore Microsoft LiteBox toolchain cache
+        id: litebox-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/nightfall/litebox
+          key: litebox-${{ runner.os }}-${{ hashFiles('infra/litebox/build-litebox.sh') }}
+
+      - name: Build Microsoft LiteBox toolchain (sandbox tests require it)
+        if: steps.litebox-cache.outputs.cache-hit != 'true'
+        run: ./infra/litebox/build-litebox.sh
+
+      - name: Verify Microsoft LiteBox toolchain is present
+        run: |
+          test -x "$HOME/.local/share/nightfall/litebox/bin/litebox_runner_linux_userland"
+          test -x "$HOME/.local/share/nightfall/litebox/bin/litebox_packager"
+          test -x "$HOME/.local/share/nightfall/litebox/bin/litebox_syscall_rewriter"
+
       - name: Typecheck entire monorepo
         run: pnpm typecheck
 
