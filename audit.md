@@ -276,6 +276,194 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 
 ---
 
+## 6. Reality Gap Inventory — mocked / faked / hardcoded as of code commit `7273506`
+
+This is the exhaustive catalog of every place where runtime behavior is mocked, faked, hardcoded,
+scripted, or fabricated across the entire repository, measured against a future state in which
+**nothing** is mocked/faked/hardcoded — i.e. every finding comes from real analysis of the user's
+real target and code, every patch is synthesized for that code, every proof runs against it, and
+every claim in the UI/docs/attestations is literally true.
+
+Each entry: **Gap** (what is faked) · **Evidence** (`file:line`) · **Real-state target** (what "real"
+requires). Severity reuses the legend above.
+
+### 6.A — Scenario and data fabrication (the entire demo world is synthetic)
+
+- **GAP-01 — S1 — The repositories under analysis are fabricated in code.**
+  `materializeWorkspaceRepositories` writes five fixed "repos" (`northstar-docs`, `asset-servicing`,
+  `auth-gateway`, `payments-ledger`, `edge-ingress-mesh`) from hardcoded source strings and
+  `git init`s them (`services/closed-loop-orchestrator/src/workspaceMaterializer.ts:82-169`). Source
+  bodies are imported fixtures (`UNPATCHED_*` from `pythonFixtures.ts` / `snapshotBuilders.ts`).
+  Real-state: analyze repositories the user actually connects (clone URL / local path / VCS
+  integration); no built-in corpus on the runtime path.
+- **GAP-02 — S1 — The live target is a bundled vulnerable app with planted canaries.**
+  `StagingTargetServer` hardcodes principals, documents, workspace IDs and canary markers
+  (`services/red-team/src/stagingTargetServer.ts:5-99`) and toggles its own vulnerabilities via
+  `setPatched`. All "live verification" only works against this server.
+  Real-state: probe the user's real staging/ephemeral target; no bundled target on the runtime path.
+- **GAP-03 — S1 — Cold bootstrap seeds a scripted campaign.** `performRealColdBootstrap` hardcodes
+  the campaign, `logicalTargetUrl = 'https://staging.northstardocs.com'`, two invented external SAST
+  findings (`SAST-DEAD-01`, `SAST-SANITIZED-02`), and cosmetic
+  `budgetRemainingPct: 94` (`services/closed-loop-orchestrator/src/index.ts:390-465`, `:525`).
+  Real-state: no auto-seeded campaign; state starts empty and is populated by real user actions.
+
+### 6.B — Red Team detection (findings are scripted, not discovered)
+
+- **GAP-04 — S1 — Findings `F-001`/`F-002` are hardcoded literals.** Fixed id, title, file
+  (`routes/collab.py`, `northstar_docs/Export/search_exports.py`), line numbers, CWE, severity and
+  owner `Leo` are constructed in branch logic
+  (`services/red-team/src/redTeamEngine.ts:603-631`, `:788-822`). IDs collide across runs.
+  Real-state: findings and their IDs derive from real evidence; unique IDs.
+- **GAP-05 — S1 — "Surface mapping" returns its own input.** `completeStructured({task:'surface-map',
+  fallbackValue:{hypotheses: baseHypotheses}})` has no model behind it, so the three baseline
+  hypotheses pass through unchanged (`redTeamEngine.ts:348-389`).
+  Real-state: hypotheses generated from real surface/dataflow analysis of the target+source.
+- **GAP-06 — S1 — External-finding triage fabricates analysis prose.** `evaluateExternalFindings`
+  branches on caller booleans and emits "call-graph reachability analysis confirmed route handler is
+  dead" with no call graph (`redTeamEngine.ts:264-288`).
+  Real-state: real reachability/taint analysis, or honest "unverified heuristic" labeling.
+- **GAP-07 — S2 — `observedRevision` defaults to a hardcoded hash.** `'e81a442'`
+  (`redTeamEngine.ts:299`). Real-state: resolve the real revision of the analyzed target.
+
+### 6.C — Model / LLM layer (no real offensive intelligence)
+
+- **GAP-08 — S1 — No capable model performs any reasoning.** Every `completeStructured` caller passes
+  the answer as `fallbackValue`; live providers are off by default and, when on, use non-existent
+  model IDs (`gpt-6-cyber-ultra`, `claude-4-6-sonnet-sec`, `gemini-3-pro-sec`) that real APIs reject,
+  so the fallback is returned (`packages/model-gateway/src/index.ts:49-81`, `:232-265`). The only
+  working model, `nightfall-local-verifier` (`nightfall-sim`), is a stub.
+  Real-state: a real, capable offensive-security model does surface-map / triage / patch-synth /
+  patch-critic / follow-up; deterministic fallback is an explicit, labeled degraded mode.
+- **GAP-09 — S1 — No trusted-vendor configuration.** Provider set is a compile-time enum
+  (`packages/core-contracts/src/operations.ts:197`); the settings page is a read-only table
+  (`apps/nightfall-ui/src/screens/defense-factory/settings-screen.tsx:132-152`); credentials come only
+  from `process.env`. Real-state: operator-governed trusted-vendor allowlist, secure credential
+  storage, enablement, per-task model selection, budget, fail-closed enforcement (see §3).
+
+### 6.D — Defense Factory patch synthesis (fixture lookup, not synthesis)
+
+- **GAP-10 — S1 — Patches are looked up by filename suffix.** `buildModuleSnapshotForFinding` is a
+  chain of `refFile.endsWith(...)` returning pre-written patched files for five known fixtures
+  (`services/defense-factory/src/snapshotBuilders.ts:418-917`).
+  Real-state: synthesize the patch from the real finding and real source.
+- **GAP-11 — S1 — The generic fallback emits an unrelated toy module.** Any non-fixture file yields a
+  fabricated `invokeGuardedHandler` module unrelated to the user's code
+  (`snapshotBuilders.ts:919-980`). Real-state: a patch derived from the actual file, or an explicit
+  "cannot auto-fix" result — never a stand-in module.
+- **GAP-12 — S2 — Code-owner routing is a hardcoded directory.** Fixed names mapped to fixed repos
+  (`services/defense-factory/src/deduplicator.ts:33-73`). Real-state: resolve owners from CODEOWNERS /
+  VCS / directory service.
+
+### 6.E — Verification and "proof" (circular or asserted)
+
+- **GAP-13 — S1 — Clean-room confirmation asserts host-computed literals.** The sandbox script
+  re-asserts values already parsed in the host (`redTeamEngine.ts:542-556`, `:721-734`).
+  Real-state: the sandbox independently reproduces the issue from inputs, not from a baked conclusion.
+- **GAP-14 — S1 — Fix-closure verification asserts precomputed booleans.** `verifyFixClosure`
+  computes pass/fail in JS, then writes `assert.equal(${securityProbeBlocked}, true)` into the sandbox
+  (`redTeamEngine.ts:1139-1141`, `:1183-1191`). Real-state: derive pass/fail from the real post-patch
+  probe/run.
+- **GAP-15 — S1 — Two-stage proof runs against fixtures, not the user's file.** Red/Green/regression
+  execute on `snapshot.unmodifiedSource`/`patchedSource` (the fixtures) unless a disk file contains a
+  magic marker (`services/defense-factory/src/defenseFactoryEngine.ts:187-378`,
+  `snapshotBuilders.ts:433`). Real-state: run against the real checkout at the observed revision.
+- **GAP-16 — S2 — Critic anti-cheat only triggers on demo tokens.** `BUILTIN_FORBIDDEN_TEST_TOKENS`
+  blocklists demo canaries (`defenseFactoryEngine.ts:54-62`); real patches never contain them.
+  Real-state: structural test-fitting detection independent of demo strings.
+- **GAP-17 — S2 — Engineer follow-up fakes the refinement.** Appends a canned comment, re-greens all
+  gates from one boolean without re-running tests, and commits placeholder body text
+  (`defenseFactoryEngine.ts:528-715`, esp. `:632-638`, `:670-677`).
+  Real-state: apply the real instruction, re-run the full proof, set each gate from its real result.
+
+### 6.F — Git / PR packaging (committed artifact diverges from shown diff)
+
+- **GAP-18 — S1 — The displayed unified diff is never applied; the whole file is overwritten.**
+  `packageVerifiedFix` writes `patchedSource` as the entire file
+  (`services/defense-factory/src/gitPackager.ts:184`); `unifiedDiff` is display-only. For a
+  non-fixture finding this commits the toy stub over the user's file while showing a small diff.
+  Real-state: apply the shown diff to the real file (3-way), assert committed == displayed, fail on
+  reject.
+- **GAP-19 — S2 — PR base and push are hardcoded.** `base: 'main'` and `push --force`
+  (`gitPackager.ts:235`, `:208`). Real-state: resolve the real default branch; no force-push to shared
+  refs; real app/installation auth.
+
+### 6.G — Sandbox / Microsoft LiteBox (claimed isolation never occurs)
+
+- **GAP-20 — S1 — LiteBox isolation is never actually used; every run is `process-confined`.** The
+  toolchain is absent (binaries not provisionable; `infra/litebox/build-litebox.sh` does a real clone
+  + `cargo build` but depends on an upstream repo/commit/crate layout that is not guaranteed to exist
+  and is never built or cached in CI), so `discoverLiteBoxToolchainSync` returns unavailable and
+  execution falls back (`packages/sandbox-runtime/src/index.ts:143-225`, `:754-768`). The runtime
+  labels the backend honestly, but the README, the settings screen copy, the fix-proposal subtitle
+  logic (`defenseFactoryEngine.ts:434-437`), and the test suite all assert LiteBox isolation that does
+  not happen (the 9 CI failures in §4.2). Real-state: either ship a reproducible LiteBox toolchain and
+  fail-closed in strict mode, or drop the LiteBox branding everywhere and describe the real backend.
+
+### 6.H — Credentials and secrets (referenced but ignored, or hardcoded)
+
+- **GAP-21 — S1 — Campaign credentials are declared but never loaded; hardcoded tokens are used.**
+  Manifests reference `credentials/alice.token` / `credentials/bob.token`
+  (`services/closed-loop-orchestrator/src/index.ts:406-409`) but the engine ignores them and uses
+  constants `STAGING_ALICE_TOKEN` / `STAGING_BOB_TOKEN`
+  (`services/red-team/src/redTeamEngine.ts:293-296`). Real-state: load and use the real referenced
+  credentials from a secret store.
+- **GAP-22 — S2 — "OS Keychain" bridge is claimed but unimplemented.** `BUILD_PLAN.md`/`README`
+  describe an OS-keychain preload bridge, but `platform-bridge.ts` exposes only
+  `pickLocalRepository` / `sendNativeNotification` and no keychain/`safeStorage` method exists
+  (`apps/nightfall-ui/src/bridge/platform-bridge.ts:17-98`). Real-state: implement real keychain-backed
+  credential storage, or remove the claim.
+
+### 6.I — UI affordances that are labeled but not wired
+
+- **GAP-23 — S2 — "Attach source archive / synthetic credentials" is a placeholder.** The composer
+  advertises attachment (`apps/nightfall-ui/src/screens/red-team/composer-screen.tsx:127`), but
+  campaign prep accepts only `prompt`, `targetUrl`, and a free-text `sourceLabel` string, and the
+  engine never ingests an archive (`services/api-gateway/src/index.ts:188-209`;
+  `redTeamEngine.ts:158-187`). Real-state: real source-archive ingestion feeding analysis.
+- **GAP-24 — S2 — Model picker lists fictional models.** The composer selects among the GAP-08 model
+  IDs (`composer-screen.tsx:43`, `:147-148`). Real-state: list real, configured, allowlisted models.
+
+### 6.J — Efficacy is measured only against synthetic testbeds
+
+- **GAP-25 — S2 — Benchmarks run on fabricated testbeds and a deliberately "defective" patch.**
+  `benchmarks/testbeds/src/` defines synthetic documents and
+  `DEFECTIVE_HARDCODED_PATCH_ASSET_EXPORT_MJS` (`assetExportFixture.ts:112-148`,
+  `northstarTestbed.ts`). There is no measurement against real-world vulnerability corpora
+  (OWASP Benchmark, real CVEs). Real-state: a reproducible efficacy suite over real datasets with
+  published detection-rate / false-positive numbers.
+
+### 6.K — Confirmed real at this commit (NOT part of the gap — keep)
+
+For fairness and to scope the work, these subsystems execute real logic and should be preserved:
+
+- Audit ledger: real SHA-256 hash-chained entries with integrity verification
+  (`packages/audit-ledger/src/index.ts:40-67`, `verifyIntegrity`).
+- SQLite persistence: real `node:sqlite` WAL store
+  (`services/closed-loop-orchestrator/src/sqliteStore.ts`).
+- Egress proxy: real L7 HTTP/WS proxy, real `fetch`/WebSocket forwarding, real token-bucket rate
+  limiting and scope allowlist enforcement (`services/red-team/src/egressProxy.ts`). (Weakness is the
+  self-signed key, GAP in §1.1 — not fakeness.)
+- Sandbox runtime: real disposable sandbox, real `process-confined` execution, real recursive file
+  erasure and SHA-256 teardown attestation (`packages/sandbox-runtime/src/index.ts`).
+- Repository scanner: real regex/heuristic SAST over real files (shallow but genuinely executed,
+  `services/defense-factory/src/repositoryScanner.ts`).
+- Git packager mechanics: real `git` clone/commit/push and real GitHub PR API POST
+  (`services/defense-factory/src/gitPackager.ts`) — the defect is GAP-18 (what it writes), not that it
+  runs.
+- UI data path: real API client + SSE subscription rendering real backend state, no embedded fake data
+  (`apps/nightfall-ui/src/api/nightfall-client.ts`, `.../hooks/use-nightfall-workspace.ts`).
+- CLI: real `validate` / `sign` / `status` / `verify-audit` (`apps/nightfall-cli/src/index.ts`).
+
+### 6.L — Definition of done for "nothing mocked/faked/hardcoded"
+
+The gap is closed when, for an arbitrary user-connected repository and target: findings come from real
+analysis (6.B, 6.C), patches are synthesized for the real file and applied as shown (6.D, 6.F), proofs
+run against the real checkout/target (6.E), credentials and sandbox isolation are real and honestly
+labeled (6.G, 6.H), the UI affordances are wired (6.I), and efficacy is demonstrated on real corpora
+(6.J) — with the 6.K subsystems retained.
+
+---
+
 ## Priority order for remediation
 
 1. Stop the destructive/unsafe paths: 2.1 (whole-file overwrite), 4.5 (unauthenticated safety
