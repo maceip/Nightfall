@@ -314,16 +314,34 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 - Evidence: `services/api-gateway/src/index.ts:7` sets `Access-Control-Allow-Origin: *`; no route is
   authenticated, including `POST /api/policy/kill-switch` (`:236`) and approval resolution (`:221`).
   The HITL approval gate and kill-switch — the safety core — are callable by anyone who can reach
-  the port.
+  the port, which the entrypoint binds to `0.0.0.0` (all interfaces), not loopback
+  (`services/api-gateway/src/server.ts:22`).
 - Required change: add authentication/authorization, scope CORS, and protect all policy/approval/
   kill-switch endpoints with an operator role.
 
 ### 4.6 — S2 — No durable, collision-free finding history
-- Evidence: SQLite defaults to `:memory:` (`closed-loop-orchestrator/src/index.ts:181`), so state is
-  lost on restart; combined with non-unique finding IDs (1.4), there is no re-scannable history — the
-  one thing a vulnerability-management platform must have.
-- Required change: default to a durable DB path, make IDs unique, and support idempotent re-scan /
-  finding-lifecycle updates.
+- Evidence: the orchestrator/CLI default to `:memory:` (`closed-loop-orchestrator/src/index.ts:181`),
+  so any embedding using the default loses state on restart; the API server entrypoint does pass a
+  durable path (`services/api-gateway/src/server.ts:7-9`), but non-unique finding IDs (1.4) still mean
+  there is no reliable re-scannable history — the one thing a vulnerability-management platform must
+  have.
+- Required change: default to a durable DB path everywhere, make IDs unique, and support idempotent
+  re-scan / finding-lifecycle updates.
+
+### 4.12 — S2 — No schema versioning or migration path
+- Evidence: `initSchema` runs `CREATE TABLE IF NOT EXISTS ...` with no `user_version`/migration framework
+  (`services/closed-loop-orchestrator/src/sqliteStore.ts:49-121`). Any schema change against an existing
+  durable DB silently diverges or breaks on upgrade.
+- Required change: add a versioned migration system (tracked `user_version` + ordered migrations) before
+  shipping a durable store to users.
+
+### 4.13 — S2 — The "shared control plane" knowledge/work-queue is single-process in-memory
+- Evidence: `SharedKnowledgeStore` holds all campaign queues, leases (30s TTL), and knowledge in a
+  process-local `Map` (`packages/shared-memory/src/index.ts:55-65`). The TTL lease logic is real but
+  per-process only, so the advertised cross-agent "Shared Knowledge graph & TTL-leased Work Queue" is
+  neither shared across instances nor durable (reinforces 4.10).
+- Required change: back the queue/knowledge/leases with a shared, durable store (DB or queue service)
+  if multi-worker or HA operation is intended, or scope the "shared control plane" claim to single-process.
 
 ### 4.7 — S3 — No environment/config documentation
 - Evidence: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GITHUB_TOKEN`,
@@ -339,7 +357,9 @@ LLM, and a configuration page needs to list trusted vendors for this.*
   `ON CONFLICT(idx) DO UPDATE SET ... payload_json = excluded.payload_json`
   (`services/closed-loop-orchestrator/src/sqliteStore.ts:437-449`), so a modified or replaced
   historical row is silently trusted and later entries chain from the tampered hash. `verifyIntegrity`
-  exists and the CLI uses it, but the running service never does.
+  exists and the CLI uses it, but the running service never does. The same `ON CONFLICT(id) DO UPDATE`
+  pattern is used by every table including `evidence_bundles` (`sqliteStore.ts:181-458`), so even the
+  reproducible proof bundles can be silently overwritten; nothing is append-only or content-addressed.
 - Required change: verify the complete hash chain before serving state or appending, fail closed on
   corruption, and make persisted audit rows strictly append-only (no `DO UPDATE`).
 
