@@ -328,21 +328,6 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 - Required change: default to a durable DB path everywhere, make IDs unique, and support idempotent
   re-scan / finding-lifecycle updates.
 
-### 4.12 — S2 — No schema versioning or migration path
-- Evidence: `initSchema` runs `CREATE TABLE IF NOT EXISTS ...` with no `user_version`/migration framework
-  (`services/closed-loop-orchestrator/src/sqliteStore.ts:49-121`). Any schema change against an existing
-  durable DB silently diverges or breaks on upgrade.
-- Required change: add a versioned migration system (tracked `user_version` + ordered migrations) before
-  shipping a durable store to users.
-
-### 4.13 — S2 — The "shared control plane" knowledge/work-queue is single-process in-memory
-- Evidence: `SharedKnowledgeStore` holds all campaign queues, leases (30s TTL), and knowledge in a
-  process-local `Map` (`packages/shared-memory/src/index.ts:55-65`). The TTL lease logic is real but
-  per-process only, so the advertised cross-agent "Shared Knowledge graph & TTL-leased Work Queue" is
-  neither shared across instances nor durable (reinforces 4.10).
-- Required change: back the queue/knowledge/leases with a shared, durable store (DB or queue service)
-  if multi-worker or HA operation is intended, or scope the "shared control plane" claim to single-process.
-
 ### 4.7 — S3 — No environment/config documentation
 - Evidence: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GITHUB_TOKEN`,
   `NIGHTFALL_ENABLE_LIVE_MODELS`, `NIGHTFALL_SQLITE_PATH`, `NIGHTFALL_WORKSPACE_REPOS_ROOT`,
@@ -388,6 +373,21 @@ LLM, and a configuration page needs to list trusted vendors for this.*
   understates the first six points and produces an artificial jump on the final day.
 - Required change: seed the series with fixes completed before the window, or compute each point from
   the full as-of-date history.
+
+### 4.12 — S2 — No schema versioning or migration path
+- Evidence: `initSchema` runs `CREATE TABLE IF NOT EXISTS ...` with no `user_version`/migration framework
+  (`services/closed-loop-orchestrator/src/sqliteStore.ts:49-121`). Any schema change against an existing
+  durable DB silently diverges or breaks on upgrade.
+- Required change: add a versioned migration system (tracked `user_version` + ordered migrations) before
+  shipping a durable store to users.
+
+### 4.13 — S2 — The "shared control plane" knowledge/work-queue is single-process in-memory
+- Evidence: `SharedKnowledgeStore` holds all campaign queues, leases (30s TTL), and knowledge in a
+  process-local `Map` (`packages/shared-memory/src/index.ts:55-65`). The TTL lease logic is real but
+  per-process only, so the advertised cross-agent "Shared Knowledge graph & TTL-leased Work Queue" is
+  neither shared across instances nor durable (reinforces 4.10).
+- Required change: back the queue/knowledge/leases with a shared, durable store (DB or queue service)
+  if multi-worker or HA operation is intended, or scope the "shared control plane" claim to single-process.
 
 ---
 
