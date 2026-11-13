@@ -718,6 +718,19 @@ run against the real checkout/target (6.E), credentials and sandbox isolation ar
 labeled (6.G, 6.H), the UI affordances are wired (6.I), and efficacy is demonstrated on real corpora
 (6.J) — with the 6.L subsystems retained.
 
+### 6.N — Coverage of this sweep
+
+This audit reviewed the entire repository at `7273506`/HEAD: every service (`red-team`,
+`defense-factory`, `closed-loop-orchestrator`, `api-gateway`), every shared package
+(`sandbox-runtime`, `policy-gate`, `model-gateway`, `audit-ledger`, `shared-memory`, `core-contracts`,
+`ui-kit`), persistence (`sqliteStore`), the Electron shell (`main.ts`, `network-policy.ts`,
+`preload.ts`), the web UI data path and screens, the CLI, `infra/litebox`, and the benchmark and test
+suites. Items not raised were checked and found acceptable: `core-contracts` `.default()` uses are
+benign, `ingestAssessmentResult` is honest plumbing, the `campaign-detail-panels` "confirmed" badge is
+properly conditional, and the `ui-kit` visualizations carry no hardcoded sample data. The gap list
+(35 GAPs plus the §1–§4 required-changes) is intended to be complete as of this commit; new findings
+from ongoing automated review are verified and folded in as they arrive.
+
 ---
 
 ## Priority order for remediation
