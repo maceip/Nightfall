@@ -1056,6 +1056,73 @@ a dedicated accessibility review.
 
 ---
 
+## 9. Verification: how to prove each gap is actually closed
+
+A gap is closed only when a test that fails on today's code passes on the fixed code, and cannot be
+satisfied by the fixtures. The existing suite cannot serve this purpose (GAP-34).
+
+### 9.1 Rules every acceptance test must follow
+1. **Red first.** Commit the test before the fix and record it failing against commit `7273506`. A
+   test that passes on today's code proves nothing.
+2. **Unseen inputs.** Use repositories, targets, file names, identifiers and secrets generated at
+   test time (randomized names and values). Nothing under test may contain `northstar`, `F-001`,
+   `F-002`, `NS-7b64c9e2`, `search_exports`, `collab`, or any other fixture token.
+3. **Negative control.** Every test that asserts "X is detected / blocked / verified" has a twin that
+   asserts the clean or permitted case is not flagged.
+4. **Observe from outside.** Assert on effects another system can see — bytes on the wire at the
+   target, the diff in the Git remote, rows in the database after restart — not on the product's own
+   return values or status fields.
+5. **Mutation check.** Deliberately break the fix (remove the guard, hardcode the answer) and confirm
+   the test goes red. Run a mutation tool (Stryker) on safety-critical modules.
+6. **In CI, required.** Each test runs on every PR as a required check and is linked from the gap ID.
+
+### 9.2 Repository-wide tripwires (cheap, catch regressions to fakery)
+- A CI grep that fails if runtime source (non-test) contains fixture tokens, literal finding IDs, or
+  hardcoded actor names (`security-operator`).
+- A CI check that no runtime module imports from `pythonFixtures`, `stagingTargetServer`, or
+  `benchmarks/`.
+- A boot test: a fresh instance with an empty database reports zero repositories, findings, fixes and
+  campaigns (closes GAP-01, GAP-03).
+
+### 9.3 Acceptance tests by gap
+
+| Gaps | Test that proves the fix | Negative control |
+| --- | --- | --- |
+| GAP-04, 05, 06; 0.1, 1.5 (real detection) | Generate a small service with a randomly named endpoint and a seeded cross-tenant access flaw; the campaign reports it with the correct endpoint and a unique ID. Repeat with a different seed; IDs differ. | Same service with the check present: no finding. |
+| GAP-08, 3.1 (real model) | With the model provider stubbed to return a distinct marker, the marker appears in the output; with the provider failing, the run is labeled degraded, not silently "complete". | Unknown model ID is rejected at configuration time. |
+| GAP-09, 3.2, 3.3 (vendor governance) | A request to a provider not on the allowlist is refused and audited; a recording proxy confirms no bytes left the process. | Allowlisted provider succeeds. |
+| GAP-10, 11, 2.2 (real patches) | For a generated vulnerable file never seen before, the proposed patch applies to that file and its generated security test goes fail → pass. For an unfixable case, the result is "cannot auto-fix", never a stand-in. | Patch for file A does not apply to unrelated file B. |
+| GAP-18, 2.1 (diff equals commit) | After packaging, `git diff base..branch` on the remote is byte-identical to the displayed diff, and all lines outside the hunk are unchanged. | A diff that does not apply fails loudly and commits nothing. |
+| GAP-27, 2.7 (real merge) | After "merge", the default branch on the remote contains the commit; with the merge blocked by branch protection, status stays unmerged and the finding stays open. | — |
+| GAP-13, 14, 15; 1.2 (real proofs) | Tamper test: make the target or patched code wrong after the host computed its result; the sandbox verdict must flip to failed. | Untampered run passes. |
+| GAP-16 (overfitting) | A patch that special-cases the test's literal input is rejected; metamorphic variants of the exploit still fail closed. | A structural fix is accepted. |
+| GAP-17 (follow-up) | A follow-up that requests a specific change produces that change in the commit, and a follow-up that breaks the tests results in failed gates. | — |
+| 1.1, 5.2 (scope authority) | A manifest signed by an unpinned key is refused; a target with no ownership proof is refused before any packet is sent (assert at a listener on the target). | Pinned key and verified target proceed. |
+| 1.6, 1.8, GAP-30 (approvals) | A mutating request does not reach the target until approved (assert at the target); after approval it arrives exactly once; after rejection never. | Read-only request needs no approval. |
+| 1.7 (redirects) | An in-scope target that redirects to an out-of-scope listener: the listener receives zero requests. | In-scope redirect is followed and re-checked. |
+| 1.9, 4.5 (kill switch, auth) | A target that never completes its response: engaging the kill switch closes the connection within the stated bound; unauthenticated calls to kill-switch and approval endpoints return 401; API is not reachable on a non-loopback interface by default. | Authorized operator succeeds. |
+| 4.14 (scan inputs) | `localPath` outside the approved root and `cloneUrl` to an internal address are refused; a canary file outside the root never appears in findings. | Path inside the root scans. |
+| 4.15, 4.16 (Electron) | Navigation to `http://localhost:5173@evil.test/` and to an arbitrary `file://` page is blocked; a certificate from the custom CA for the wrong hostname or expired is rejected. | Exact origin and valid certificate pass. |
+| 4.8, GAP-32 (ledger) | Modify one persisted audit row and restart: the service refuses to start or serves a visible integrity failure, and the UI badge is not "verified". | Untouched ledger verifies. |
+| 4.6, 4.10, 4.12, 4.13 (durability) | Kill the process mid-campaign and restart: queue, leases, findings and approvals are intact; open a database from the previous schema version: it migrates. | — |
+| 4.9, GAP-26 (schedules) | With a fake clock advanced past the schedule, a scan runs without user action; disabling the schedule stops it. | — |
+| GAP-29 (duplicates) | Marking duplicate without choosing an existing finding is refused; no `SEC-CANONICAL` ever appears. | Valid canonical accepted, and reversible. |
+| GAP-20, 36; 4.3, 5.6 (isolation) | From inside a sandboxed job: reading a host canary file fails and a direct internet connection fails; with isolation unavailable, strict mode refuses to run and the attestation names the real backend. Run for Python and Node workloads. | Permitted in-sandbox file read succeeds. |
+| GAP-21, 22; 5.3 (secrets, evidence) | Credentials come from the secret store (rotating the secret changes behavior without a code change); a planted sensitive string in a target response is absent from the database file on disk. | — |
+| 5.1 (identity) | Every audit entry carries the authenticated user; the requester of a mutating action cannot approve it. | A different authorized approver can. |
+| 2.8, GAP-12 (routing) | With a team at its cap, a new proposal is deferred; owners resolve from a generated CODEOWNERS file. | Under the cap, proposal is created. |
+| GAP-23, 24, 28, 31, 35; 4.17; Section 8 (UI) | Browser end-to-end tests: connect a new repository by URL; a suppressed fix shows no "verified" text and no enabled merge; a new approval appears without reload; evidence download returns a file. | — |
+| GAP-25, 5.9 (efficacy) | Benchmark job publishes precision, recall and false-positive rate on real corpora each release and fails the release if they fall below the committed thresholds. | — |
+| 5.8 (claims) | Each row of the claims register links to the passing test above; a claim may be restored in the README only in the same change that turns its test green. | — |
+
+### 9.4 Independent confirmation
+Tests written by the people who wrote the fix share their blind spots. For the safety-critical rows
+(scope, approvals, kill switch, isolation, diff-equals-commit, merge), have someone who did not write
+the fix attempt to defeat it, and commission an external assessment before any claim in 5.8 is
+restored publicly.
+
+---
+
 ## Priority order for remediation
 
 1. Stop the destructive/unsafe paths: 2.1 (whole-file overwrite), 4.5 (unauthenticated safety
@@ -1066,4 +1133,5 @@ a dedicated accessibility review.
 5. Make it trustworthy: 5.8 first (withdraw untrue claims immediately — it costs nothing and removes
    the largest reputational risk), then 5.1–5.3 (identity, authorization to test, evidence handling),
    then 5.5–5.7 and 5.9–5.10.
+Throughout: no item is closed until its Section 9 test is red on `7273506` and green on the fix.
 6. Make it usable: 8.2 first (UX-10 to UX-15 can cause harm), then 8.1, then 8.3.
