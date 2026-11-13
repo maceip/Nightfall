@@ -588,6 +588,16 @@ requires). Severity reuses the legend above.
   `northstarTestbed.ts`). There is no measurement against real-world vulnerability corpora
   (OWASP Benchmark, real CVEs). Real-state: a reproducible efficacy suite over real datasets with
   published detection-rate / false-positive numbers.
+- **GAP-34 — S2 — The test suite encodes and enforces the fakes.** Unit/integration/benchmark tests
+  assert the fabricated outputs as correct: `confirmedFindings === ['F-001','F-002']`
+  (`services/red-team/src/redTeam.test.ts:357`, `benchmarks/testbeds/src/benchmarks.test.ts:176`,
+  `services/api-gateway/src/apiGateway.test.ts:190`), `sandboxBackend`/`backendUsed === 'microsoft-litebox'`
+  (`defenseFactory.test.ts:281`, `sandbox-runtime.test.ts:52,57,61,99`, `apiGateway.test.ts:53`), and
+  `finding.status === 'fixed'` after the no-op merge (`orchestrator.test.ts:133`,
+  `benchmarks.test.ts:298,312`). The green path validates the fabrications, real behavior has no coverage,
+  and the LiteBox assertions are what keep CI red (4.2). Real-state: tests assert real discovery, an
+  actually-available sandbox backend, and a real merge/verification outcome — closing the gaps requires
+  rewriting the suite.
 
 ### 6.K — Best-in-class real alternatives (by fakery area)
 
