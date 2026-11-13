@@ -579,6 +579,11 @@ requires). Severity reuses the legend above.
   launch (`services/closed-loop-orchestrator/src/index.ts:1258-1261`), not derived from real
   model/compute cost; the ModelGateway's real cost budget is never surfaced. Real-state: drive the budget
   display from actual cost/usage accounting.
+- **GAP-35 — S2 — No UI path to connect a real remote repository.** The scanner backend accepts
+  `cloneUrl`/`localPath` (`services/closed-loop-orchestrator/src/index.ts:749-759`), but `cloneUrl` is
+  never referenced anywhere in the UI/client and there is no "add/connect repository" control, so cloud
+  scans are confined to the five pre-materialized fixture repos; only desktop local-path mode reaches
+  real user code. Real-state: a repo-connect / VCS-integration flow that feeds a real `cloneUrl`.
 
 ### 6.J — Efficacy is measured only against synthetic testbeds
 
@@ -697,6 +702,13 @@ For fairness and to scope the work, these subsystems execute real logic and shou
 - UI data path: real API client + SSE subscription rendering real backend state, no embedded fake data
   (`apps/nightfall-ui/src/api/nightfall-client.ts`, `.../hooks/use-nightfall-workspace.ts`).
 - CLI: real `validate` / `sign` / `status` / `verify-audit` (`apps/nightfall-cli/src/index.ts`).
+- Electron shell hardening: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`,
+  `webSecurity: true` are genuinely set (`apps/nightfall-ui/electron/main.ts:284-287`), and the desktop
+  proxy + custom-CA pinning (`electron/network-policy.ts`) is real code. (Caveat: egress defaults to
+  `direct` with no restriction unless a proxy is configured, so the "zero-egress" posture is
+  deployment-specific, not a desktop default.)
+- Repository scanner reach: `triggerScan`/`scanRepository` genuinely accept `cloneUrl`/`localPath` and
+  run the real SAST over real files — the limitation is UI-only (GAP-35), not the engine.
 
 ### 6.M — Definition of done for "nothing mocked/faked/hardcoded"
 
