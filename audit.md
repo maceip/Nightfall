@@ -211,12 +211,29 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 - Required change: add an explicit open-source or commercial license; add `CONTRIBUTING.md` and
   `SECURITY.md`.
 
-### 4.2 — S1 — CI never runs the code
-- Evidence: the only workflow is `.github/workflows/desktop-debug-installers.yml` (builds installers
-  on push to `main`). There is no CI that runs `pnpm typecheck` or `pnpm test`, so the "zero-mock /
-  real execution" invariant is never verified and the test suite gates nothing.
-- Required change: add CI that runs `pnpm install`, `pnpm typecheck`, and `pnpm test` on PR and push,
-  as a required check.
+### 4.2 — S1 — CI runs the test suite and it is red (the suite hard-requires the unprovisionable LiteBox toolchain)
+- Correction to an earlier draft of this item: CI does exist and does run the code.
+  `.github/workflows/desktop-debug-installers.yml` defines a job
+  `Typecheck, Unit/E2E Tests & Bundle Audit` that runs `pnpm typecheck` and `pnpm test` on both
+  `push` and `pull_request` (lines 3-8, 46, 72-76).
+- Evidence: that job fails — 9 tests across 6 files fail because they assert the LiteBox backend is
+  present/selected rather than the real fallback:
+  `expect(proposal.sandboxBackend).toBe('microsoft-litebox')`
+  (`services/defense-factory/src/defenseFactory.test.ts:281`);
+  `expect(boot.sandboxToolchain.available).toBe(true)`
+  (`services/api-gateway/src/apiGateway.test.ts:38`,
+  `services/closed-loop-orchestrator/src/orchestrator.test.ts:54`,
+  `packages/sandbox-runtime/src/sandbox-runtime.test.ts:29,47` and strict-mode `:94`);
+  the CLI status expects `Microsoft LiteBox (ready` (`apps/nightfall-cli/src/cli.test.ts:84`); the
+  benchmark suite expects `microsoft-litebox` (`benchmarks/testbeds/src/benchmarks.test.ts:283,366`).
+  Because the LiteBox binaries cannot be provisioned (see 4.3), the runtime correctly falls back to
+  `process-confined`, so the suite is red anywhere the binaries are absent — i.e. in CI and on any
+  normal install. The test suite encodes the very overclaim it should be catching.
+- Required change: make the required check pass honestly — either ship a reproducible LiteBox
+  provisioning path and gate the LiteBox-specific assertions on its real availability, or rewrite the
+  tests to assert the real `process-confined` backend and drop the LiteBox assertions (ties to 4.3
+  and to the claims-vs-reality remediation). Keep `pnpm typecheck` + `pnpm test` as required,
+  green PR checks thereafter.
 
 ### 4.3 — S1 — "Microsoft LiteBox" isolation is claimed but silently downgraded
 - Evidence: the sandbox falls back to `process-confined` whenever the LiteBox binaries are absent
