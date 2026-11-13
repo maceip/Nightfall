@@ -1123,6 +1123,87 @@ restored publicly.
 
 ---
 
+## 10. Second-pass review: fundamentals the first passes missed
+
+After Section 9 exposed that the audit had no verification criteria, the document was re-checked
+against what any audit of an autonomous security tool must cover, rather than against what the code
+happened to show. These were missing.
+
+### 10.1 — S1 — The tool's own threat model: everything it reads is attacker-controlled
+Nightfall ingests repositories, target responses and engineer messages, and will feed them to a model
+that proposes code and actions. None of Sections 0–9 treat that input as hostile.
+- **Prompt injection.** Model prompts are built by string-concatenating untrusted content: the diff
+  (`services/defense-factory/src/defenseFactoryEngine.ts:363`), the engineer's message (`:645`) and
+  the target URL (`services/red-team/src/redTeamEngine.ts:387`). Today no model reads them (GAP-08);
+  the moment one does, text in a repository or a target response can instruct it to approve a bad
+  patch, exfiltrate source, or widen scope. Needed: treat all ingested content as data, never
+  instructions; constrain model output to schemas; keep every safety decision (scope, approval,
+  merge, critic verdict) in deterministic code the model cannot influence; red-team the product with
+  injection payloads planted in repos and responses.
+- **Hostile targets.** A target can return non-JSON or huge bodies. Responses are parsed with
+  unguarded `JSON.parse` (`redTeamEngine.ts:529,691,707,710,1053-1121`) and read fully into memory
+  (`services/red-team/src/egressProxy.ts:580`), so one malformed response aborts the whole campaign
+  and an unbounded one exhausts memory. Needed: size limits, tolerant parsing, per-probe failure
+  isolation.
+- **Hostile repositories.** The scanner reads every matching file whole with no size or count limit
+  (`services/defense-factory/src/repositoryScanner.ts:713`), and the real-state design runs a
+  repository's own tests — arbitrary code execution by design. Needed: resource limits, and strong
+  isolation as a precondition for running any repository code (4.3, GAP-36).
+- **Malicious or mistaken fixes.** An automated patch can introduce a vulnerability or a backdoor
+  while passing its tests. Needed: mandatory human review, patch scanning by the same detectors,
+  provenance on every generated change, and no auto-merge on protected branches.
+
+### 10.2 — S2 — Probes leave state behind in the target
+- Evidence: every campaign and every fix verification creates saved searches in the target and never
+  deletes them (`redTeamEngine.ts:679,1068,1098`). "Non-destructive" is claimed but nothing cleans up.
+- Needed: track every object a probe creates and remove it, tag test data, and report residue.
+
+### 10.3 — S2 — Concurrency is unconsidered
+- Evidence: scan IDs are computed before an awaited scan and written after it
+  (`services/closed-loop-orchestrator/src/index.ts:747-759`), so two concurrent scans allocate the
+  same `SEC-` numbers and overwrite each other; all writes are un-transacted upserts; one shared
+  kill-switch and policy gate serve every campaign. Nothing has been tested with two users or two
+  jobs at once.
+- Needed: database-allocated IDs, transactions, per-campaign controls, and concurrency tests.
+
+### 10.4 — S3 — A persistent device identifier is exposed to page content
+- Evidence: a device ID is computed and placed on `window` (`apps/nightfall-ui/electron/main.ts:271,290`;
+  `electron/preload.ts:49,82`) with no stated purpose, consent or retention.
+- Needed: document its use or remove it.
+
+### 10.5 — Planning information the audit lacked
+- **Dependencies.** Several gaps cannot be closed in isolation: real proofs (GAP-15) and running
+  repository tests require real isolation (4.3, GAP-36) first; any model integration (3.1) requires
+  10.1 and vendor governance (3.2) first; restoring public claims (5.8) requires Section 9 tests.
+- **A minimum credible product.** The smallest honest release is: connect one real repository, run
+  the real scanner, show findings with real code references, propose nothing automatically, claim
+  nothing about isolation or verification. Everything else is added only with its Section 9 test.
+- **Not estimated.** This audit gives no effort or cost figures; those need the team's input.
+
+---
+
+## 11. Confidence and limits of this audit
+
+This audit has been wrong three times and corrected each time: it said CI did not exist, then that
+LiteBox could not be built, then that LiteBox never ran. Each error came from inferring instead of
+running. Readers should weigh the findings accordingly.
+
+- **Verified by execution:** the test suite (9 failures without LiteBox, 44/44 with it, locally); the
+  LiteBox build from the pinned commit; the CI failure logs.
+- **Verified by reading code only, not by exploitation:** every other finding, including the
+  security defects (redirect scope escape, approval bypass, navigation guard, custom-CA verifier,
+  arbitrary scan paths). Each is a reading of the cited lines and should be confirmed with the
+  Section 9 test before being relied on.
+- **Not examined:** the built desktop application on macOS or Windows, the Docker Compose stack
+  running, accessibility, performance under load, and the `ui-kit` components beyond a search for
+  embedded data. Roughly a third of the UI screen code was read in full; the rest was searched.
+- **External review:** five rounds of automated review contributed 23 findings, each checked against
+  the code before inclusion; that reviewer then reached its usage limit, so the last four sections
+  have had no second reviewer.
+- **Line references** are to commit `7273506` and will drift.
+
+---
+
 ## Priority order for remediation
 
 1. Stop the destructive/unsafe paths: 2.1 (whole-file overwrite), 4.5 (unauthenticated safety
