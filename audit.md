@@ -391,6 +391,113 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 
 ---
 
+## 5. Enterprise legitimacy and trust (what is required beyond "nothing faked")
+
+Sections 0–4 and 6 are about making what exists real. This section lists what a respected, legitimate
+enterprise security tool needs in addition — gaps that would remain even if every fabrication above
+were replaced with a real implementation.
+
+### 5.1 — S1 — There is no identity: every action is attributed to a hardcoded actor
+- Evidence: approvals, kill-switch, campaign launch, coverage toggles and duplicate marking are
+  recorded as `'security-operator'` / `'security-engineer'` / `'engineer'` string literals
+  (`services/closed-loop-orchestrator/src/index.ts:908,1141,1211,1294,1302,1379,1389`;
+  `packages/policy-gate/src/index.ts:225`; `services/defense-factory/src/defenseFactoryEngine.ts:701`).
+  The audit trail cannot say which person approved a state-mutating probe or disengaged the
+  kill-switch, and the approver is never distinguished from the requester.
+- Required change: SSO/OIDC sign-in, the authenticated principal on every audit entry, role-based
+  access control, and enforced separation of duties (the approver of a mutating action cannot be its
+  requester; kill-switch reset requires a distinct role).
+
+### 5.2 — S1 — No proof of authorization to test a target
+- Evidence: `POST /api/red-team/campaigns/prepare` accepts any `targetUrl`
+  (`services/api-gateway/src/index.ts:188-209`); on launch the orchestrator mints its own key and signs
+  the scope itself (`services/closed-loop-orchestrator/src/index.ts:1186-1187`) and sends real requests
+  to that host; the API is unauthenticated and bound to `0.0.0.0` (4.5). Anyone who can reach the port
+  can direct probes at a third party's system, and nothing records that the target's owner consented.
+- Required change: verify target ownership before any request is sent (DNS TXT record, well-known
+  file, or a signed authorization from a named accountable person), require the scope to be signed by
+  an authorized human-held key (1.1), and record rules of engagement and the legal basis per campaign.
+
+### 5.3 — S1 — The tool stores the sensitive data it finds, in plaintext, with no retention policy
+- Evidence: evidence bundles persist raw response bodies and, for the export finding, the full text
+  of the leaked documents (`services/red-team/src/redTeamEngine.ts:580,588,759,768,783-785`) as
+  plaintext JSON in SQLite (`services/closed-loop-orchestrator/src/sqliteStore.ts:369-393`). There is
+  no redaction, no encryption at rest, no retention or deletion, and no per-tenant isolation. A tool
+  that proves a data leak thereby becomes a second copy of the leaked data.
+- Required change: minimize and redact evidence at capture (hashes and canary markers rather than
+  payloads), encrypt at rest, define retention/deletion, restrict evidence access by role, and isolate
+  tenants.
+
+### 5.4 — S2 — Customer code and findings can be sent to third-party models with no governance
+- See 3.2 / 3.3. Required in addition: a published subprocessor list, per-vendor data-processing
+  terms, and a no-third-party (self-hosted model) mode for regulated customers.
+
+### 5.5 — S2 — The tool's own supply chain is unprotected
+- Evidence: the only pipeline builds unsigned debug installers (`CSC_IDENTITY_AUTO_DISCOVERY: 'false'`,
+  `.github/workflows/desktop-debug-installers.yml:120,218`; macOS signing is opt-in via
+  `NIGHTFALL_ENABLE_MAC_SIGN`, `apps/nightfall-ui/electron-builder.config.mjs:44-48`); the update feed
+  is a placeholder `http://localhost:8081` (`electron-builder.config.mjs:362-366`); there is no SBOM,
+  provenance attestation, or dependency-update/scanning configuration (no Dependabot/Renovate); and the
+  sandbox toolchain is compiled from an upstream fetched at build time (`infra/litebox/Dockerfile.litebox`).
+- Required change: a release pipeline that signs and notarizes installers, publishes an SBOM and
+  provenance attestation, scans and updates dependencies, serves updates over HTTPS with signature
+  verification, and pins/verifies third-party toolchains by digest.
+
+### 5.6 — S2 — The deployment topology's isolation claim is not what executes
+- See GAP-36: the "zero-egress runner pool" container is idle and sandboxed commands run in the API
+  container with normal egress. Required: route real sandbox execution through an isolated network
+  whose only exit is the policy proxy, and test that property.
+
+### 5.7 — S2 — No observability or operability
+- Evidence: no logging, metrics, or tracing dependency exists in any `package.json`; failures are
+  swallowed silently in several places (`services/defense-factory/src/gitPackager.ts:258`,
+  `packages/model-gateway/src/index.ts:225`); the API maps every non-"not found" error to HTTP 400
+  (`services/api-gateway/src/index.ts:249-253`). An operator cannot tell that PR creation or a model
+  call failed.
+- Required change: structured logs with correlation IDs, metrics and health/readiness endpoints,
+  surfaced (not swallowed) errors with correct status codes, backup/restore, and an upgrade path (4.12).
+
+### 5.8 — S1 — Public claims that must be made true or withdrawn (claims register)
+
+In security, being caught overclaiming costs more than under-claiming. Each row is a statement made
+in `README.md`, `AGENTS.md`, `docs/`, or the UI, against what the code does at this commit.
+
+| Claim | Reality | Reference |
+| --- | --- | --- |
+| "Isolated with Microsoft LiteBox" | Never runs; every execution is `process-confined` | GAP-20 |
+| "Zero runtime mock fallbacks" | Findings, patches and model output are fixtures/fallbacks | §0, GAP-08, GAP-10 |
+| "Confirm real weaknesses with reproducible `EvidenceBundle` proofs" | Two hardcoded findings; sandbox re-asserts host values | GAP-04, GAP-13 |
+| "Ed25519-signed `campaign.yaml` enforces scope" | Self-signed by the runner; redirects not re-checked | 1.1, 1.7 |
+| "Mandatory Two-Stage Test Proof + independent Critic gate" | Runs on fixtures; critic is a fallback value | GAP-15, GAP-08 |
+| "Commits reviewable Git branches/PRs" | Whole-file overwrite differing from the shown diff | GAP-18 |
+| "Re-test fixes post-deployment" | Nothing is merged; closure asserts precomputed booleans | 2.7, GAP-14 |
+| "Ask-for-Approval HITL gate" | POST mutations bypass it; approved actions never run | 1.6, 1.8 |
+| "<1s Kill-Switch" | Cannot abort in-flight requests; endpoint is unauthenticated | 1.9, 4.5 |
+| "Append-only / Immutable hash-chained ledger" | Rows overwritable; chain never verified by the service | 4.8, GAP-32 |
+| "Cross-agent Shared Knowledge graph & TTL-leased Work Queue" | Process-local `Map`, lost on crash | 4.10, 4.13 |
+| "Routes work to code owners within WIP velocity caps" | Hardcoded owner table; cap never enforced | GAP-12, 2.8 |
+| "Zero-egress Docker Compose network" | Idle container; real execution has egress | GAP-36 |
+| "Scheduled / continuous monitoring" | One immediate scan plus a label | 4.9 |
+| "OS Keychain" bridge | Not implemented | GAP-22 |
+| "1-to-1 mapping of every wireframe control to real implementations" | Several controls are unwired or show false state | GAP-23, GAP-28, GAP-31, GAP-32, GAP-35 |
+
+- Required change: reduce every public statement to what is true today, keep this register in the
+  repository, and restore each claim only when its referenced gap is closed and tested.
+
+### 5.9 — S2 — Efficacy is asserted, not measured
+- See GAP-25 and 6.K (6.J). Required in addition: publish detection-rate, false-positive rate and
+  verified-patch-correctness numbers with methodology, and commit to a false-positive ceiling before
+  any automated patching is enabled on customer repositories.
+
+### 5.10 — S3 — Trust artifacts are absent
+- Evidence: no `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, vulnerability-disclosure policy, or
+  `security.txt` (4.1).
+- Required change: add them; define a responsible-disclosure policy for vulnerabilities the tool finds
+  in third-party software; commission an independent security assessment of the tool; and plan the
+  compliance posture regulated buyers require (SOC 2 / ISO 27001, DPA).
+
+---
+
 ## 6. Reality Gap Inventory — mocked / faked / hardcoded as of code commit `7273506`
 
 This is the exhaustive catalog of every place where runtime behavior is mocked, faked, hardcoded,
@@ -532,6 +639,14 @@ requires). Severity reuses the legend above.
   logic (`defenseFactoryEngine.ts:434-437`), and the test suite all assert LiteBox isolation that does
   not happen (the 9 CI failures in §4.2). Real-state: either ship a reproducible LiteBox toolchain and
   fail-closed in strict mode, or drop the LiteBox branding everywhere and describe the real backend.
+- **GAP-36 — S1 — The "zero-egress LiteBox runner pool" is an idle container.** The compose file
+  declares `litebox-sandbox-runner` on an `internal: true` network (`infra/deploy/docker-compose.yml:38-53`),
+  but its image's command is `litebox_runner_linux_userland --help` (`infra/litebox/Dockerfile.litebox`,
+  final `CMD`), no code dispatches work to it, and `DisposableSandboxRuntime` executes commands locally
+  via `execFile` inside the `api-gateway` container, which is also attached to the non-internal
+  `control_plane_net`. Sandboxed code therefore has ordinary network egress and does not traverse the
+  policy proxy. Real-state: run sandbox workloads in the isolated network with the proxy as the only
+  exit, and add a test proving a sandboxed process cannot reach the internet directly.
 
 ### 6.H — Credentials and secrets (referenced but ignored, or hardcoded)
 
@@ -728,7 +843,7 @@ This audit reviewed the entire repository at `7273506`/HEAD: every service (`red
 suites. Items not raised were checked and found acceptable: `core-contracts` `.default()` uses are
 benign, `ingestAssessmentResult` is honest plumbing, the `campaign-detail-panels` "confirmed" badge is
 properly conditional, and the `ui-kit` visualizations carry no hardcoded sample data. The gap list
-(35 GAPs plus the §1–§4 required-changes) is intended to be complete as of this commit; new findings
+(36 GAPs plus the §1–§5 required-changes) is intended to be complete as of this commit; new findings
 from ongoing automated review are verified and folded in as they arrive.
 
 ---
@@ -740,3 +855,6 @@ from ongoing automated review are verified and folded in as they arrive.
 2. Make the premise true: 0.1–0.3, 2.2, 2.3, 3.1 (real offensive model behind the gateway).
 3. Make it governable: 3.2 / 3.3 (trusted-vendor configuration page), 1.2–1.3 (honest verification).
 4. Make it adoptable: 4.1, 4.2, 4.3, 4.4, 4.6; then the S3 polish items.
+5. Make it trustworthy: 5.8 first (withdraw untrue claims immediately — it costs nothing and removes
+   the largest reputational risk), then 5.1–5.3 (identity, authorization to test, evidence handling),
+   then 5.5–5.7 and 5.9–5.10.
