@@ -113,6 +113,23 @@ The end-to-end loop is coherent only for one bundled scenario (`northstar-docs`,
   hop-by-hop, re-running the full scope + policy evaluation (and rate/duration accounting) on every
   hop.
 
+### 1.8 — S1 — Approved mutating actions are reported complete but never executed
+- Evidence: `resolveApproval` marks the work-queue item `confirmed` ("state-mutating boundary
+  verified") and flips the campaign to `completed`, but never replays the paused request through
+  `EgressPolicyProxy` with the approval ID
+  (`services/closed-loop-orchestrator/src/index.ts:1290-1342`); no caller passes an `approvalId` back
+  to the proxy. The approved retention POST is reported done without ever running.
+- Required change: persist the paused action bound to its approval, replay it through the policy gate
+  on approval, and mark it complete only from the real response (see also GAP-30).
+
+### 1.9 — S1 — No per-request deadline; a hung response outlives max_duration and the kill-switch
+- Evidence: `checkCommonGuards` checks elapsed time once, then `proxyHttpRequest` awaits `fetch` and
+  `response.text()` with no `AbortSignal` (`services/red-team/src/egressProxy.ts:263-273,570-580`). A
+  target that accepts the connection and never finishes keeps the campaign running past `max_duration`,
+  and engaging the kill-switch cannot stop the in-flight request.
+- Required change: give every request and body read an `AbortSignal` bound to the remaining campaign
+  duration, and abort all in-flight requests when the kill-switch engages.
+
 ---
 
 ## 2. Nightfall Defense Factory — required changes
@@ -174,6 +191,14 @@ The end-to-end loop is coherent only for one bundled scenario (`northstar-docs`,
 - Required change: perform a real, verified merge of the packaged branch/PR (respecting branch
   protection and required checks), advance `merged`/`fixed` only on a confirmed merge, and run closure
   checks against the actual resulting revision.
+
+### 2.8 — S2 — The per-team WIP cap and dispatchable routing are never enforced
+- Evidence: `RootCauseDeduplicator.clusterAndRoute` computes `dispatchable: false` past a team's cap,
+  but the bootstrap caller never reads `dispatchable`
+  (`services/closed-loop-orchestrator/src/index.ts:545-560`) and `startFixForFinding` bypasses routing
+  entirely (`:921-964`); a team can receive unlimited active proposals despite the advertised cap.
+- Required change: make proposal creation reject or defer non-dispatchable clusters, or remove the
+  WIP-cap claim.
 
 ---
 
@@ -327,6 +352,23 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 - Required change: persist schedules and execute them through a real scheduler/worker, or remove the
   scheduled-coverage claims from the UI and audit text.
 
+### 4.10 — S2 — Campaign queue/lease/knowledge state is in-memory only and not crash-recoverable
+- Evidence: `SharedKnowledgeStore` holds queues, leases, and knowledge in in-memory `Map`s
+  (`packages/shared-memory/src/index.ts`); `launchCampaign` persists only the pre-assessment campaign
+  row, runs the whole assessment in memory, and writes the result back only after it returns
+  (`services/closed-loop-orchestrator/src/index.ts:1205,1229-1284`). A crash mid-assessment loses all
+  intermediate findings, lease, and queue state — contradicting the SQLite-persistence requirement.
+- Required change: persist queue/knowledge/lease mutations transactionally as they happen and make a
+  running campaign recoverable after restart.
+
+### 4.11 — S3 — The overview "currently fixed" trend is miscomputed
+- Evidence: `computeOverview` seeds `runningFixed` at 0 and counts only fixes whose `updatedAt` is in
+  the 7-day window, then overwrites just today's point with the all-time total
+  (`services/closed-loop-orchestrator/src/index.ts:671-695`). Any fix completed before the window
+  understates the first six points and produces an artificial jump on the final day.
+- Required change: seed the series with fixes completed before the window, or compute each point from
+  the full as-of-date history.
+
 ---
 
 ## 6. Reality Gap Inventory — mocked / faked / hardcoded as of code commit `7273506`
@@ -363,6 +405,12 @@ requires). Severity reuses the legend above.
   immediate scan and stores a cron display label; `toggleRepositoryScans` only flips a flag and sets
   `'Daily at 8:00 AM UTC'` (`services/closed-loop-orchestrator/src/index.ts:1127-1144`). No later scan
   runs. Real-state: a real scheduler/worker that executes persisted schedules.
+- **GAP-29 — S1 — Marking a finding "duplicate" with no canonical fabricates `SEC-CANONICAL` and
+  discards it.** The UI duplicate buttons send no `duplicateOfId`; with no same-cluster peer,
+  `markFindingDuplicate` invents `'SEC-CANONICAL'`, sets the finding to `discarded_fp`, and records the
+  nonexistent relationship (`services/closed-loop-orchestrator/src/index.ts:887-911`). A real finding
+  silently disappears behind a fabricated duplicate. Real-state: require selecting/validating an
+  existing canonical finding, or reject the action when none is supplied.
 
 ### 6.B — Red Team detection (findings are scripted, not discovered)
 
@@ -431,6 +479,10 @@ requires). Severity reuses the legend above.
   gates from one boolean without re-running tests, and commits placeholder body text
   (`defenseFactoryEngine.ts:528-715`, esp. `:632-638`, `:670-677`).
   Real-state: apply the real instruction, re-run the full proof, set each gate from its real result.
+- **GAP-30 — S1 — Approved mutating actions are recorded verified without executing.** `resolveApproval`
+  marks the item `confirmed` / campaign `completed` but never replays the paused request through the
+  proxy (`services/closed-loop-orchestrator/src/index.ts:1290-1342`). Real-state: replay the approved
+  action and record completion only from its real response (see 1.8).
 
 ### 6.F — Git / PR packaging (committed artifact diverges from shown diff)
 
@@ -489,6 +541,12 @@ requires). Severity reuses the legend above.
   (`apps/nightfall-ui/src/screens/red-team/finding-report-screen.tsx:53-59`); there is no evidence-export
   API, client method, or handler anywhere in the repo. Real-state: generate and download a sanitized
   evidence bundle, or remove the promise.
+- **GAP-31 — S2 — The fix drawer shows a false "verified" state for suppressed/failed fixes.** It renders
+  "✓ Fix prepared · Two-stage test proof verified" unconditionally and enables "Merge & Verify Fix"
+  whenever status is not `merged`, including suppressed proposals the backend then rejects
+  (`apps/nightfall-ui/src/screens/defense-factory/fix-drawer.tsx:94-99,170-185`;
+  `services/closed-loop-orchestrator/src/index.ts:1021-1023`). Real-state: render suppression and failed
+  gates truthfully and disable actions that cannot run.
 
 ### 6.J — Efficacy is measured only against synthetic testbeds
 
