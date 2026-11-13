@@ -35,7 +35,7 @@ flowchart TB
         PG["Policy Engine, Approval Gate & Kill-Switch"]
         SM["Shared Knowledge Store (Surface Graph & Work Queue Ledger)"]
         AL["Immutable Audit Ledger & Safety Monitor Stream"]
-        SR["Disposable Sandbox Runtime (MicroVM / gVisor)"]
+        SR["Microsoft LiteBox Sandbox Runtime (litebox_shim_linux + seccomp / Windows / SEV-SNP)"]
     end
 
     subgraph RedTeam["Subproject 1: Red Team (services/red-team)"]
@@ -115,12 +115,12 @@ flowchart TB
 
 ### How the Selected Hybrid Shell Maximizes Velocity
 
-1. **`95%` Pure Web Renderer (`apps/nightfall-ui/src/renderer`)**:
-   - Built with **React 19 + TypeScript + Vite + Tailwind CSS**, zero direct Node/Electron imports in React views.
-   - Runs directly in any browser (`pnpm dev:web`) with `< 50ms` HMR, instant cloud previews, shareable deep links, and fast headless Playwright visual/interaction testing.
-2. **`5%` Thin Hardened Electron Shell (`apps/nightfall-ui/src/main` & `src/preload` via `electron-vite`)**:
+1. **`95%` Pure Web Renderer Powered by the Repo-Wide `webclaw` Design System (`packages/ui-kit` + `apps/nightfall-ui`)**:
+   - All UI primitives (`Button`, `Input`, `Tabs`, `DialogRoot`/`DrawerContent`, `Collapsible`, `Switch`, `Tooltip`, `Badge`, `DataTable`, `KpiCard`, `PromptInput`), `oklch(... 80)` warm neutral tokens (`primary-50`..`primary-950`), and `@hugeicons/react` icons (`size={20}`, `strokeWidth={1.5}`) live in `@nightfall/ui-kit` (built on the `webclaw` design system so screens stay modular `< 300 LOC` and never hand-roll bespoke controls).
+   - Runs directly in any browser (`pnpm dev:web`) against the live REST + SSE API Gateway (`:4000`) with zero client-side mock fallbacks.
+2. **`5%` Thin Hardened Electron Shell (`apps/nightfall-ui/electron`)**:
    - Configures `BrowserWindow` with `titleBarStyle: 'hiddenInset'` (macOS traffic lights inset inline with `← →`, sidebar toggle, and tab strip) and `titleBarOverlay` (Windows/Linux), using CSS `app-region: drag` on the custom top bar and `app-region: no-drag` on interactive tabs/buttons.
-   - Exposes a minimal typed `window.nightfallDesktop` preload bridge (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, strict CSP) to power the **`Local`** scan option in the `New scan` drawer, local `campaign.yaml`/archive picking, OS notifications on HITL gates, and `safeStorage` token persistence.
+   - Exposes a minimal typed `window.nightfallDesktop` preload bridge (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, strict CSP) to power the **`Local`** scan option in the `New scan` drawer, local `campaign.yaml`/archive picking, and **Microsoft LiteBox** cross-platform execution (`litebox_runner_linux_userland` on Linux and `litebox_runner_linux_on_windows_userland` on Windows).
 
 ---
 
@@ -128,7 +128,7 @@ flowchart TB
 
 > [!NOTE]
 > **Strict Brand Unification Rule:** Every screen, navigation header, browser/app tab, agent badge, snapshot label, and slide-over drawer uses **`Nightfall`** nomenclature—replacing all legacy `"Daybreak"` and `"Codex"` strings across the entire product:
-> - Sidebar brand header: **`Nightfall`** (per `IMG-20261112-WA8349.jpg`)
+> - Sidebar brand header: **`Nightfall`** (per [IMG-20261112-WA8349.jpg](file:///home/antigravity/IMG-20261112-WA8349.jpg))
 > - Red Team agent pill & tab title: **`Nightfall Red Team`**
 > - Remediation slide-over drawer: **`Fix with Nightfall`**
 > - Snapshot provenance subtitle: **`Nightfall · Cloud snapshot`** / **`Nightfall · Local snapshot`**
@@ -160,22 +160,22 @@ flowchart TB
 
 | Screen / View | Mock Reference(s) | Exact UI Components & Interactive Behavior |
 | :--- | :--- | :--- |
-| **`Overview` Dashboard** | `201748~2`, `201752~2` | 1. **Proposed fixes** horizontal 3-card row (`Fix title`, `Fixes N finding`, repo slug, `Proposed` pill, `Review` button, count link `6 >`). 2. **Split Posture Card**: left `Open findings` total with interactive hoverable horizontal bars (`Critical` red, `High` orange, `Medium` amber); right `Fixed findings` with `Daily trend · last 7 days (UTC)` chart (`Currently fixed` solid green vs. `New findings` dashed crimson). 3. **Finding status** 4-column counter strip (`New`, `Triaged`, `In Progress`, `Fixed` + `All time v` selector). |
-| **`Findings` Explorer & Sankey** | `WA8349`, `201759~2`, `201801~2`, `201810~2` | 1. Top CTA banner (`</> Review N proposed fixes...` + dark `View fixes` pill button). 2. Search input + `Open findings` state dropdown + `Filters` + `...`. 3. **Interactive 3-Stage Sankey Diagram**: `Findings (Total)` → Severity (`Critical`, `High`, `Medium`, `Low`, `Informational`) → Workflow Status (`New`, `Triaged`, `In Progress`). Clicking a node (e.g., `Critical 31`) highlights its flow ribbons (`In Progress 13`, `Triaged 13`, `New 5`) and filters the table below. 4. **Findings Data Table**: bulk-select checkbox, `Severity` badge, `Finding` title + `repo · SEC-ID · boundary note`, `Owner` avatar chip, `Sources` icon badges (`Nightfall` + external/AI sources), and `Status` pill. |
-| **Finding Detail (`SEC-1034`)** | `201812~2` | Top actions (`Mark as duplicate`, `Continue fix` split button). Center narrative (`SUMMARY`, `ROOT CAUSE`, `IMPACT AND ATTACK PATH` with `Preconditions` bullets, `REMEDIATION`). Sticky right metadata column (`REPORTED SEVERITY`, `STATUS` selector, `FIX VERIFICATION` badge, `REPOSITORY`, `OBSERVED REVISION` commit hash, `WEAKNESS` CWE, `OBSERVED BY`, `OWNER`). |
-| **`Fix with Nightfall` Drawer** | `201839~2` | Slide-over interactive remediation thread attached to a finding: background request prompt, collapsible `✓ Fix prepared` step log, `Proposed fix 1` summary card (`2 changed files`, `Review changes` button), and `+ Ask for follow-up` composer for engineer-guided patch refinement. |
-| **`Fixes` Queue** | `201808~2` | Dedicated Defense Factory patch table: `Fix` title & root-cause subtitle, `Repository` (`repo` + `Nightfall · Cloud snapshot` or issue ID), `Findings` count + severity pill, `Status` (`Proposed`, `In progress`), `Review` / `View progress` button, and dismissible bottom-right batch progress toast. |
-| **`Repositories` Coverage** | `201848~2` | Top `Enable security scans` dark CTA; 3 coverage KPI cards (`PR review coverage 29/36`, `Scheduled scan coverage 29/36`, `Need attention 6`); search + `Filters`; repository table (`PR reviews: Enabled` green pill, `Scheduled scans: Daily at 8:00 AM UTC` green pill, `Last completed scan`, `Owner` team, per-repo settings gear, `Scan` button). |
-| **`New scan` Slide-Over Drawer** | `201839~2` | Modal/drawer with `Cloud · Recommended` vs. `Local` segmented toggle, `Repository` combobox, `Scan method` radio list (`Repository scan`, `Continuous monitoring`, `Scheduled scan`), `Scope` radio list (`Full repository`, `Specific folder or files`), and `Cancel` / `Start Scan` footer. |
+| **`Overview` Dashboard** | [201748~2](file:///home/antigravity/Screenshot_20261112-201748~2.jpg), [201752~2](file:///home/antigravity/Screenshot_20261112-201752~2.jpg) | 1. **Proposed fixes** horizontal 3-card row (`Fix title`, `Fixes N finding`, repo slug, `Proposed` pill, `Review` button, count link `6 >`). 2. **Split Posture Card**: left `Open findings` total with interactive hoverable horizontal bars (`Critical` red, `High` orange, `Medium` amber); right `Fixed findings` with `Daily trend · last 7 days (UTC)` chart (`Currently fixed` solid green vs. `New findings` dashed crimson). 3. **Finding status** 4-column counter strip (`New`, `Triaged`, `In Progress`, `Fixed` + `All time v` selector). |
+| **`Findings` Explorer & Sankey** | [WA8349](file:///home/antigravity/IMG-20261112-WA8349.jpg), [201759~2](file:///home/antigravity/Screenshot_20261112-201759~2.jpg), [201801~2](file:///home/antigravity/Screenshot_20261112-201801~2.jpg), [201810~2](file:///home/antigravity/Screenshot_20261112-201810~2.jpg) | 1. Top CTA banner (`</> Review N proposed fixes...` + dark `View fixes` pill button). 2. Search input + `Open findings` state dropdown + `Filters` + `...`. 3. **Interactive 3-Stage Sankey Diagram**: `Findings (Total)` → Severity (`Critical`, `High`, `Medium`, `Low`, `Informational`) → Workflow Status (`New`, `Triaged`, `In Progress`). Clicking a node (e.g., `Critical 31`) highlights its flow ribbons (`In Progress 13`, `Triaged 13`, `New 5`) and filters the table below. 4. **Findings Data Table**: bulk-select checkbox, `Severity` badge, `Finding` title + `repo · SEC-ID · boundary note`, `Owner` avatar chip, `Sources` icon badges (`Nightfall` + external/AI sources), and `Status` pill. |
+| **Finding Detail (`SEC-1034`)** | [201812~2](file:///home/antigravity/Screenshot_20261112-201812~2.jpg) | Top actions (`Mark as duplicate`, `Continue fix` split button). Center narrative (`SUMMARY`, `ROOT CAUSE`, `IMPACT AND ATTACK PATH` with `Preconditions` bullets, `REMEDIATION`). Sticky right metadata column (`REPORTED SEVERITY`, `STATUS` selector, `FIX VERIFICATION` badge, `REPOSITORY`, `OBSERVED REVISION` commit hash, `WEAKNESS` CWE, `OBSERVED BY`, `OWNER`). |
+| **`Fix with Nightfall` Drawer** | [201839~2](file:///home/antigravity/Screenshot_20261112-201839~2.jpg) | Slide-over interactive remediation thread attached to a finding: background request prompt, collapsible `✓ Fix prepared` step log, `Proposed fix 1` summary card (`2 changed files`, `Review changes` button), and `+ Ask for follow-up` composer for engineer-guided patch refinement. |
+| **`Fixes` Queue** | [201808~2](file:///home/antigravity/Screenshot_20261112-201808~2.jpg) | Dedicated Defense Factory patch table: `Fix` title & root-cause subtitle, `Repository` (`repo` + `Nightfall · Cloud snapshot` or issue ID), `Findings` count + severity pill, `Status` (`Proposed`, `In progress`), `Review` / `View progress` button, and dismissible bottom-right batch progress toast. |
+| **`Repositories` Coverage** | [201848~2](file:///home/antigravity/Screenshot_20261112-201848~2.jpg) | Top `Enable security scans` dark CTA; 3 coverage KPI cards (`PR review coverage 29/36`, `Scheduled scan coverage 29/36`, `Need attention 6`); search + `Filters`; repository table (`PR reviews: Enabled` green pill, `Scheduled scans: Daily at 8:00 AM UTC` green pill, `Last completed scan`, `Owner` team, per-repo settings gear, `Scan` button). |
+| **`New scan` Slide-Over Drawer** | [201839~2](file:///home/antigravity/Screenshot_20261112-201839~2.jpg) | Modal/drawer with `Cloud · Recommended` vs. `Local` segmented toggle, `Repository` combobox, `Scan method` radio list (`Repository scan`, `Continuous monitoring`, `Scheduled scan`), `Scope` radio list (`Full repository`, `Specific folder or files`), and `Cancel` / `Start Scan` footer. |
 
 ### 3.3 Red Team Screens
 
 | Screen / View | Mock Reference(s) | Exact UI Components & Interactive Behavior |
 | :--- | :--- | :--- |
-| **Campaign Prompt Composer** | `201550~2` | Clean entry canvas (*"What should we work on in `<Workspace>`?"*); target context bar (`[Globe] Staging target` + `[Folder] Source repo` + settings gear); rich prompt input supporting `@`-tool invocation (`Use Nightfall Red Team to assess: <url>`); bottom bar with `+` file/token attach, **`Ask for approval` HITL toggle** (hand icon), **provider-agnostic Model Selector**, mic, and submit button. |
-| **Split Thread + `campaign.yaml` Builder** | `201610~2`, `201610~3` | Left pane: conversational setup summarizing scope, test accounts (`Alice` & `Bob`), duration, and RPS limits, ready for `"Launch the campaign."` Right pane: live syntax-highlighted **`campaign.yaml` (v5)** viewer/editor with line numbers and `Download v5 YAML` action. |
-| **Live Campaign Workspace (`northstar-docs-staging`)** | `201612~2`, `201614~2`, `201638~2` | Header with target badge, **budget meter (`81% Left` signal bars)**, and live status pill (`● In progress 1h 0m 09s`). **6 Workspace Tabs**: `Overview`, `Activity`, `Work queue`, `Shared knowledge`, `Scope & coverage`, `Findings [N]`. Real-time status headline + `Activity` sparkline + discrete `Findings` event barcode timeline. Split lower grid: paginated `Investigation findings` (with severity filter) + `Endpoints` hit-count table (`GET /api/me`, `GET /ws/documents`, `POST /api/...`). Pinned bottom **`Safety monitor`** bar confirming strict staging scope adherence. |
-| **Confirmed Finding Report (`F-002`)** | `201641~2`, `201708~2` | `← Overview` back-nav; title & campaign subtitle; deep-link evidence jump (`See the private document in the downloaded ZIP ↓`); structured sections (`Summary`, `Architecture` with clickable `file:start-end` links, `Defects`, `Exploit chain` / Verification receipts with sanitized canary marker `NS-7b64c9e2`, and unified syntax-highlighted **`Minimal patch`** diff card with one-click promote to **Defense Factory**); sticky right rail (`SEVERITY`, `STATUS: Confirmed`, `AFFECTED ENDPOINT`, section jump links). |
+| **Campaign Prompt Composer** | [201550~2](file:///home/antigravity/Screenshot_20261112-201550~2.jpg) | Clean entry canvas (*"What should we work on in `<Workspace>`?"*); target context bar (`[Globe] Staging target` + `[Folder] Source repo` + settings gear); rich prompt input supporting `@`-tool invocation (`Use Nightfall Red Team to assess: <url>`); bottom bar with `+` file/token attach, **`Ask for approval` HITL toggle** (hand icon), **provider-agnostic Model Selector**, mic, and submit button. |
+| **Split Thread + `campaign.yaml` Builder** | [201610~2](file:///home/antigravity/Screenshot_20261112-201610~2.jpg), [201610~3](file:///home/antigravity/Screenshot_20261112-201610~3.jpg) | Left pane: conversational setup summarizing scope, test accounts (`Alice` & `Bob`), duration, and RPS limits, ready for `"Launch the campaign."` Right pane: live syntax-highlighted **`campaign.yaml` (v5)** viewer/editor with line numbers and `Download v5 YAML` action. |
+| **Live Campaign Workspace (`northstar-docs-staging`)** | [201612~2](file:///home/antigravity/Screenshot_20261112-201612~2.jpg), [201614~2](file:///home/antigravity/Screenshot_20261112-201614~2.jpg), [201638~2](file:///home/antigravity/Screenshot_20261112-201638~2.jpg) | Header with target badge, **budget meter (`81% Left` signal bars)**, and live status pill (`● In progress 1h 0m 09s`). **6 Workspace Tabs**: `Overview`, `Activity`, `Work queue`, `Shared knowledge`, `Scope & coverage`, `Findings [N]`. Real-time status headline + `Activity` sparkline + discrete `Findings` event barcode timeline. Split lower grid: paginated `Investigation findings` (with severity filter) + `Endpoints` hit-count table (`GET /api/me`, `GET /ws/documents`, `POST /api/...`). Pinned bottom **`Safety monitor`** bar confirming strict staging scope adherence. |
+| **Confirmed Finding Report (`F-002`)** | [201641~2](file:///home/antigravity/Screenshot_20261112-201641~2.jpg), [201708~2](file:///home/antigravity/Screenshot_20261112-201708~2.jpg) | `← Overview` back-nav; title & campaign subtitle; deep-link evidence jump (`See the private document in the downloaded ZIP ↓`); structured sections (`Summary`, `Architecture` with clickable `file:start-end` links, `Defects`, `Exploit chain` / Verification receipts with sanitized canary marker `NS-7b64c9e2`, and unified syntax-highlighted **`Minimal patch`** diff card with one-click promote to **Defense Factory**); sticky right rail (`SEVERITY`, `STATUS: Confirmed`, `AFFECTED ENDPOINT`, section jump links). |
 
 ---
 
@@ -184,31 +184,28 @@ flowchart TB
 ```text
 Nightfall/
 ├── apps/
-│   ├── nightfall-ui/                # electron-vite + React 19 + Tailwind three-column desktop & web app
-│   │   ├── src/main/                # Thin hardened Electron main process (hiddenInset chrome, safeStorage, IPC)
-│   │   ├── src/preload/             # Context-isolated PlatformBridge (Local scan runner, file picker, notifications)
-│   │   └── src/renderer/            # Pure web React app (runs identically in Electron and browser dev/preview)
-│   └── nightfall-cli/               # CLI for CI/CD triggers, local scans, campaign.yaml signing & validation
+│   ├── nightfall-ui/                # Modular (<300 LOC/file) Electron + Web UI consuming @nightfall/ui-kit
+│   │   ├── electron/                # Thin hardened Electron main + preload bridge (hiddenInset chrome, Local picker)
+│   │   └── src/                     # Modular screens (defense-factory/*, red-team/*) + live REST/SSE client
+│   └── nightfall-cli/               # CLI for CI/CD triggers, local scans, campaign.yaml signing & audit checks
 ├── packages/
-│   ├── core-contracts/              # Zod/TypeScript + JSON Schemas: CampaignYamlV5, FindingRecord, EvidenceBundle, PatchBundle
-│   ├── ui-kit/                      # Nightfall design system: 3-column shell, Sankey chart, unified diff, activity barcode
-│   ├── mock-fixtures/               # Full Northstar Docs + multi-repo replay fixtures matching all 18 screens
-│   ├── model-gateway/               # Provider-agnostic LLM router backing the UI Model Selector & agent workers
-│   ├── sandbox-runtime/             # Disposable container/microVM lifecycle manager + teardown attestation
+│   ├── core-contracts/              # Zod/TypeScript schemas: CampaignYamlV5, FindingRecord, EvidenceBundle, FixProposal
+│   ├── ui-kit/                      # Repo-wide webclaw Design System (@base-ui/react, @hugeicons/react, oklch tokens, charts)
+│   ├── model-gateway/               # Provider-agnostic LLM router (OpenAI/Anthropic/Gemini) + cost circuit breaker
+│   ├── sandbox-runtime/             # Microsoft LiteBox Library OS runtime (litebox_runner + packager + syscall_rewriter)
 │   ├── policy-gate/                 # campaign.yaml validator, risk-tier HITL approval engine & emergency kill-switch
 │   ├── shared-memory/               # Backing store for Red Team "Work queue" & "Shared knowledge" tabs
 │   └── audit-ledger/                # Hash-chained event log powering "Activity", "Safety monitor" & PR audit trails
 ├── services/
-│   ├── api-gateway/                 # REST + SSE/WebSocket BFF serving nightfall-ui
-│   ├── red-team/                    # Subproject 1: campaign.yaml runner, HTTP+WS Egress Policy Proxy, agents
-│   ├── defense-factory/             # Subproject 2: dedup, hermetic repro, Red/Green test proof, GitHub PR loop
-│   └── closed-loop-orchestrator/    # Durable workflow coordinator (Red Team <-> Defense Factory <-> Re-test)
+│   ├── api-gateway/                 # Live REST + SSE BFF serving nightfall-ui (:4000) + staging target (:4010)
+│   ├── red-team/                    # Subproject 1: campaign.yaml compiler, L7 HTTP+WS Egress Policy Proxy, live verifiers
+│   ├── defense-factory/             # Subproject 2: real RepositoryScanner, LiteBox Red/Green proof, GitPatchPackager
+│   └── closed-loop-orchestrator/    # Durable node:sqlite (WAL) closed-loop workflow engine
 ├── benchmarks/
-│   ├── red-team-testbeds/           # Containerized multi-tenant testbeds (e.g., Northstar Docs staging clone)
-│   └── defense-factory-corpus/      # Historical vulnerability snapshots with ground-truth test suites
+│   └── testbeds/                    # Multi-tenant HTTP+WS staging testbed & Microsoft LiteBox E2E proof suites
 └── infra/
-    ├── sandbox-images/              # Hardened base images for Red Team verifiers & Defense Factory build runners
-    └── deploy/                      # Docker Compose (local full-stack) + Kubernetes / network isolation manifests
+    ├── litebox/                     # build-litebox.sh & multi-stage Dockerfile.litebox (microsoft/litebox)
+    └── deploy/                      # Zero-egress Docker Compose network & persistent SQLite volume topology
 ```
 
 ### Canonical `campaign.yaml` (v5) Scope Schema (`packages/core-contracts`)

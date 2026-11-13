@@ -1,11 +1,15 @@
 'use strict';
 
 const { spawn } = require('node:child_process');
+const { existsSync } = require('node:fs');
 const path = require('node:path');
 
 try {
   const electronBinary = require('electron');
-  const child = spawn(String(electronBinary), [path.join(__dirname, 'main.cjs')], {
+  const bundledEntry = path.join(__dirname, '../out/main/index.js');
+  const entryPoint = existsSync(bundledEntry) ? bundledEntry : path.join(__dirname, 'main.cjs');
+
+  const child = spawn(String(electronBinary), [entryPoint], {
     stdio: 'inherit',
     env: {
       ...process.env,
@@ -16,7 +20,7 @@ try {
 } catch {
   console.log(
     '[Nightfall Desktop] Electron binary not installed in this headless environment.\n' +
-      'Run `pnpm dev:web` for instant browser preview, or install `electron` locally on macOS/Windows/Linux to launch the native hiddenInset window.',
+      'Run `pnpm dev:web` for instant browser preview, or `pnpm bundle:desktop` / GitHub Actions CI to build the `.dmg` and `.msi` installers.',
   );
   process.exit(0);
 }

@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@nightfall/core-contracts": "workspace:*",
-    "@nightfall/mock-fixtures": "workspace:*",
     "@nightfall/policy-gate": "workspace:*",
     "@nightfall/shared-memory": "workspace:*",
     "@nightfall/audit-ledger": "workspace:*",

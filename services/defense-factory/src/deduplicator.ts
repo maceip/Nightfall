@@ -52,6 +52,24 @@ const DEFAULT_TEAM_DIRECTORY: Record<string, OwnerInfo> = {
     team: 'Experience',
     avatarColor: '#dff3ff',
   },
+  'auth-gateway': {
+    name: 'Maya',
+    initials: 'M',
+    team: 'Identity',
+    avatarColor: '#efe3ff',
+  },
+  'payments-ledger': {
+    name: 'Devon',
+    initials: 'D',
+    team: 'Custody',
+    avatarColor: '#e2f5ea',
+  },
+  'edge-ingress-mesh': {
+    name: 'Devon',
+    initials: 'D',
+    team: 'Infrastructure',
+    avatarColor: '#e2f5ea',
+  },
 };
 
 export class RootCauseDeduplicator {

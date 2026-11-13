@@ -5,9 +5,6 @@
       "@nightfall/core-contracts": [
         "../../packages/core-contracts/src/index.ts"
       ],
-      "@nightfall/mock-fixtures": [
-        "../../packages/mock-fixtures/src/index.ts"
-      ],
       "@nightfall/sandbox-runtime": [
         "../../packages/sandbox-runtime/src/index.ts"
       ],

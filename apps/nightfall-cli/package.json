@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@nightfall/core-contracts": "workspace:*",
-    "@nightfall/mock-fixtures": "workspace:*",
     "@nightfall/policy-gate": "workspace:*",
     "@nightfall/audit-ledger": "workspace:*",
     "@nightfall/closed-loop-orchestrator": "workspace:*"

@@ -22,6 +22,7 @@ export interface EgressPolicyProxyOptions {
   auditLedger: AuditLedger;
   startedAtMs?: number;
   nowFn?: () => number;
+  targetTransportRedirects?: Record<string, string>;
 }
 
 export interface ProxyHttpRequestInput {
@@ -102,6 +103,7 @@ export class EgressPolicyProxy {
   private readonly startedAtMs: number;
   private readonly nowFn: () => number;
   private readonly allowedNormalizedOrigins: Set<string>;
+  private readonly transportRedirects = new Map<string, string>();
   private readonly maxDurationMs: number;
   private readonly maxRps: number;
 
@@ -138,10 +140,33 @@ export class EgressPolicyProxy {
     this.allowedNormalizedOrigins = new Set(
       manifest.campaign.targets.map((target) => normalizeOriginToHttp(target)),
     );
+    if (options.targetTransportRedirects) {
+      for (const [logicalOrigin, localTarget] of Object.entries(options.targetTransportRedirects)) {
+        this.transportRedirects.set(normalizeOriginToHttp(logicalOrigin), localTarget);
+      }
+    }
     this.maxDurationMs = parseDurationMs(manifest.campaign.max_duration);
     this.maxRps = manifest.campaign.max_requests_per_second;
     this.tokens = this.maxRps;
     this.lastRefillMs = this.startedAtMs;
+  }
+
+  private resolveTransportHttpUrl(approvedUrl: string): string {
+    const parsed = new URL(approvedUrl);
+    const redirectBase = this.transportRedirects.get(normalizeOriginToHttp(approvedUrl));
+    if (!redirectBase) {
+      return approvedUrl;
+    }
+    return new URL(`${parsed.pathname}${parsed.search}`, redirectBase).toString();
+  }
+
+  private resolveTransportWsUrl(approvedWsUrl: string): string {
+    const parsed = new URL(approvedWsUrl);
+    const redirectBase = this.transportRedirects.get(normalizeOriginToHttp(approvedWsUrl));
+    if (!redirectBase) {
+      return approvedWsUrl;
+    }
+    return toWebSocketUrl(redirectBase, `${parsed.pathname}${parsed.search}`);
   }
 
   isManifestSignatureValid(): boolean {
@@ -542,7 +567,8 @@ export class EgressPolicyProxy {
         ? upperMethod
         : 'GET';
 
-    const response = await fetch(input.url, {
+    const transportHttpUrl = this.resolveTransportHttpUrl(input.url);
+    const response = await fetch(transportHttpUrl, {
       method: upperMethod,
       headers: input.headers,
       body:
@@ -601,8 +627,9 @@ export class EgressPolicyProxy {
       wsHeaders.Origin = input.origin;
     }
 
+    const transportWsUrl = this.resolveTransportWsUrl(input.url);
     return new Promise<ProxyWebSocketResult>((resolve, reject) => {
-      const ws = new WebSocket(input.url, { headers: wsHeaders });
+      const ws = new WebSocket(transportWsUrl, { headers: wsHeaders });
       let settled = false;
 
       const timer = setTimeout(() => {
@@ -774,7 +801,8 @@ export class EgressPolicyProxy {
         this.activeSockets.add(clientWs);
         clientWs.on('close', () => this.activeSockets.delete(clientWs));
 
-        const upstreamWs = new WebSocket(targetWsUrl, { headers: upstreamHeaders });
+        const upstreamTransportUrl = this.resolveTransportWsUrl(targetWsUrl);
+        const upstreamWs = new WebSocket(upstreamTransportUrl, { headers: upstreamHeaders });
         this.activeSockets.add(upstreamWs);
         upstreamWs.on('close', () => this.activeSockets.delete(upstreamWs));
 

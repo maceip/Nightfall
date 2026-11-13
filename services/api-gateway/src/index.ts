@@ -48,7 +48,15 @@ export interface ApiGatewayInstance {
 export function createApiServer(
   customOrchestrator?: NightfallOrchestrator,
 ): http.Server & { orchestrator: NightfallOrchestrator; closeGracefully: () => Promise<void> } {
-  const orchestrator = customOrchestrator ?? new NightfallOrchestrator();
+  const orchestrator =
+    customOrchestrator ??
+    new NightfallOrchestrator({
+      sqlitePath: process.env.NIGHTFALL_SQLITE_PATH || ':memory:',
+      workspaceReposRoot: process.env.NIGHTFALL_WORKSPACE_REPOS_ROOT || undefined,
+      stagingTargetUrl: process.env.NIGHTFALL_STAGING_TARGET_URL || undefined,
+    });
+
+  const readyPromise = orchestrator.ensureBootstrapped();
   const activeSseResponses = new Set<http.ServerResponse>();
 
   const server = http.createServer(async (req, res) => {
@@ -69,12 +77,8 @@ export function createApiServer(
           service: PACKAGE_NAME,
           timestamp: new Date().toISOString(),
           killSwitchEngaged: orchestrator.policyGate.isKillSwitchEngaged(),
+          sandboxToolchain: orchestrator.sandboxRuntime.getToolchainStatus(),
         });
-        return;
-      }
-
-      if (method === 'GET' && pathname === '/api/bootstrap') {
-        sendJson(res, 200, orchestrator.getBootstrapState());
         return;
       }
 
@@ -111,6 +115,14 @@ export function createApiServer(
 
         req.on('close', cleanup);
         res.on('close', cleanup);
+        return;
+      }
+
+      // Ensure real SQLite + scanner + assessment bootstrap has completed before serving API state
+      await readyPromise;
+
+      if (method === 'GET' && pathname === '/api/bootstrap') {
+        sendJson(res, 200, orchestrator.getBootstrapState());
         return;
       }
 
@@ -201,7 +213,7 @@ export function createApiServer(
         const campaignId = decodeURIComponent(launchMatch[1]!);
         const body = await readJsonBody(req);
         const yamlText = typeof body.yamlText === 'string' ? body.yamlText : undefined;
-        const result = orchestrator.launchCampaign(campaignId, yamlText);
+        const result = await orchestrator.launchCampaign(campaignId, yamlText);
         sendJson(res, 200, result);
         return;
       }
@@ -242,7 +254,8 @@ export function createApiServer(
   });
 
   const closeGracefully = async (): Promise<void> => {
-    orchestrator.dispose();
+    await readyPromise.catch(() => undefined);
+    await orchestrator.dispose();
     for (const sseRes of activeSseResponses) {
       try {
         sseRes.end();

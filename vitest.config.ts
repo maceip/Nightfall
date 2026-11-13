@@ -5,7 +5,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@nightfall/core-contracts': path.resolve(__dirname, 'packages/core-contracts/src/index.ts'),
-      '@nightfall/mock-fixtures': path.resolve(__dirname, 'packages/mock-fixtures/src/index.ts'),
       '@nightfall/sandbox-runtime': path.resolve(__dirname, 'packages/sandbox-runtime/src/index.ts'),
       '@nightfall/policy-gate': path.resolve(__dirname, 'packages/policy-gate/src/index.ts'),
       '@nightfall/shared-memory': path.resolve(__dirname, 'packages/shared-memory/src/index.ts'),

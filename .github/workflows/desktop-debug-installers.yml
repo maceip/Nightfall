@@ -1,0 +1,254 @@
+name: Nightfall Debug Electron Installers (MSI & DMG)
+
+on:
+  push:
+    branches:
+      - main
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      preview_identity:
+        description: 'Package under side-by-side Nightfall Preview identity (1 or 0)'
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '0'
+      debug_build:
+        description: 'Retain debug sourcemaps, Inspect Element, and CDP debugging port (1 or 0)'
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '0'
+
+concurrency:
+  group: nightfall-desktop-installers-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '24'
+  NIGHTFALL_ENV: debug
+  NIGHTFALL_DEBUG_BUILD: ${{ inputs.debug_build || '1' }}
+  NIGHTFALL_PREVIEW_IDENTITY: ${{ inputs.preview_identity || '1' }}
+  NIGHTFALL_ENABLE_MAC_SIGN: '0'
+
+jobs:
+  verify:
+    name: Typecheck, Unit/E2E Tests & Bundle Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout Nightfall repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm (reads packageManager from package.json)
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Install workspace dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Generate desktop icon & DMG assets
+        run: node scripts/generate-desktop-icons.mjs
+
+      - name: Typecheck entire monorepo
+        run: pnpm typecheck
+
+      - name: Run unit, UI, packaging, and closed-loop E2E suites
+        run: pnpm test
+
+      - name: Build renderer & zcode-aligned Electron main/preload bundles
+        run: pnpm --filter @nightfall/nightfall-ui run build:desktop
+
+  build-macos-dmg:
+    name: Build Debug macOS DMG (${{ matrix.arch }})
+    needs: verify
+    runs-on: macos-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - name: Checkout Nightfall repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm (reads packageManager from package.json)
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Cache Electron & electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-cache-macos-${{ matrix.arch }}-${{ hashFiles('apps/nightfall-ui/package.json') }}
+          restore-keys: |
+            electron-cache-macos-${{ matrix.arch }}-
+
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build & package Debug Electron .dmg (${{ matrix.arch }})
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          node apps/nightfall-ui/scripts/bundle-desktop.mjs \
+            --os mac \
+            --arch ${{ matrix.arch }} \
+            --targets dmg
+
+      - name: Verify macOS .app bundle anatomy, ad-hoc signature & DMG image
+        run: |
+          DIST_DIR="apps/nightfall-ui/dist-electron/mac-${{ matrix.arch }}"
+          APP_BUNDLE="$(find "${DIST_DIR}" -maxdepth 2 -name '*.app' -print -quit)"
+          if [[ -z "${APP_BUNDLE}" ]]; then
+            echo "Missing packaged .app bundle under ${DIST_DIR}" >&2
+            exit 1
+          fi
+          bash scripts/doctor-macos-release-app.sh "${APP_BUNDLE}" --debug
+          for dmg in "${DIST_DIR}"/*.dmg; do
+            echo "Verifying DMG image: ${dmg}"
+            hdiutil verify "${dmg}"
+          done
+
+      - name: Upload Debug macOS DMG Installer Artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-debug-macos-${{ matrix.arch }}-dmg
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/nightfall-ui/dist-electron/mac-${{ matrix.arch }}/*.dmg
+            apps/nightfall-ui/dist-electron/mac-${{ matrix.arch }}/*.blockmap
+            apps/nightfall-ui/dist-electron/mac-${{ matrix.arch }}/SHA256SUMS-*.txt
+
+  build-windows-msi:
+    name: Build Debug Windows MSI (${{ matrix.arch }})
+    needs: verify
+    runs-on: windows-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+    steps:
+      - name: Checkout Nightfall repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm (reads packageManager from package.json)
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - name: Ensure WiX Toolset v3 is on PATH for electron-builder MSI packaging
+        shell: pwsh
+        run: |
+          $wixCandle = Get-Command candle.exe -ErrorAction SilentlyContinue
+          if (-not $wixCandle) {
+            $wixPaths = @(
+              "${env:WIX}bin",
+              "C:\Program Files (x86)\WiX Toolset v3.14\bin",
+              "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+            ) | Where-Object { $_ -and (Test-Path $_) }
+            if ($wixPaths.Count -eq 0) {
+              Write-Host "Installing WiX Toolset via Chocolatey..."
+              choco install wixtoolset --yes --no-progress
+              $wixPaths = @(
+                "C:\Program Files (x86)\WiX Toolset v3.14\bin",
+                "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+              ) | Where-Object { Test-Path $_ }
+            }
+            if ($wixPaths.Count -gt 0) {
+              echo "$($wixPaths[0])" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+              Write-Host "Added WiX Toolset to PATH: $($wixPaths[0])"
+            }
+          } else {
+            Write-Host "Found WiX candle.exe at $($wixCandle.Source)"
+          }
+
+      - name: Cache Electron & electron-builder downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: electron-cache-windows-${{ matrix.arch }}-${{ hashFiles('apps/nightfall-ui/package.json') }}
+          restore-keys: |
+            electron-cache-windows-${{ matrix.arch }}-
+
+      - name: Install workspace dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build & package Debug Electron .msi (${{ matrix.arch }})
+        shell: pwsh
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          node apps/nightfall-ui/scripts/bundle-desktop.mjs --os win --arch ${{ matrix.arch }} --targets msi
+
+      - name: Verify Windows MSI Compound Document header & install manifest
+        shell: pwsh
+        run: |
+          $distDir = "apps/nightfall-ui/dist-electron/win-${{ matrix.arch }}"
+          $msiFiles = Get-ChildItem -Path $distDir -Filter "*.msi"
+          if ($msiFiles.Count -eq 0) {
+            throw "No .msi installer produced in $distDir"
+          }
+          foreach ($msi in $msiFiles) {
+            if ($msi.Length -lt 20MB) {
+              throw "Unexpectedly small MSI installer ($($msi.Length) bytes): $($msi.FullName)"
+            }
+            $bytes = [System.IO.File]::ReadAllBytes($msi.FullName)[0..7]
+            $hex = ($bytes | ForEach-Object { $_.ToString("X2") }) -join ""
+            if ($hex -ne "D0CF11E0A1B11AE1") {
+              throw "Invalid OLE Compound Document header ($hex) in $($msi.FullName)"
+            }
+            Write-Host "Verified MSI installer: $($msi.Name) ($([Math]::Round($msi.Length / 1MB, 2)) MiB, OLE header OK)"
+          }
+          $manifest = Get-ChildItem -Path $distDir -Recurse -Filter ".nightfall-install-manifest" -Force
+          if ($manifest.Count -eq 0) {
+            throw "Missing .nightfall-install-manifest in unpacked Windows app directory"
+          }
+
+      - name: Upload Debug Windows MSI Installer Artifact (${{ matrix.arch }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightfall-debug-windows-${{ matrix.arch }}-msi
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            apps/nightfall-ui/dist-electron/win-${{ matrix.arch }}/*.msi
+            apps/nightfall-ui/dist-electron/win-${{ matrix.arch }}/SHA256SUMS-*.txt

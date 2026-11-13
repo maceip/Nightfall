@@ -11,16 +11,22 @@ import { NightfallOrchestrator } from '@nightfall/closed-loop-orchestrator';
 import {
   ALICE_TOKEN,
   BASELINE_ASSET_EXPORT_TEST_MJS,
+  BASELINE_NORTHSTAR_SEARCH_EXPORTS_TEST_PY,
   BOB_TOKEN,
   BOB_WORKSPACE_ID,
   DEFECTIVE_HARDCODED_DIFF_ASSET_EXPORT,
   DEFECTIVE_HARDCODED_PATCH_ASSET_EXPORT_MJS,
   MINIMAL_ASSET_EXPORT_DIFF,
+  MINIMAL_NORTHSTAR_SEARCH_EXPORTS_DIFF,
   MINIMAL_PATCHED_ASSET_EXPORT_MJS,
+  MINIMAL_PATCHED_NORTHSTAR_SEARCH_EXPORTS_PY,
   NorthstarDocsTestbedServer,
   SECURITY_INVARIANT_ASSET_EXPORT_TEST_MJS,
+  SECURITY_NORTHSTAR_SEARCH_EXPORTS_DIFF,
+  SECURITY_NORTHSTAR_SEARCH_EXPORTS_TEST_PY,
   SECURITY_TEST_DIFF_ASSET_EXPORT,
   UNPATCHED_ASSET_EXPORT_MJS,
+  UNPATCHED_NORTHSTAR_SEARCH_EXPORTS_PY,
   WS_A_CANARY,
   WS_CHANNEL_CANARY,
 } from './index.js';
@@ -35,7 +41,7 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
       await proxies.pop()?.stopServer();
     }
     while (orchestrators.length > 0) {
-      orchestrators.pop()?.dispose();
+      await orchestrators.pop()?.dispose();
     }
     while (testbeds.length > 0) {
       await testbeds.pop()?.stop();
@@ -47,7 +53,7 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     testbeds.push(testbed);
     const { baseUrl, wsUrl } = await testbed.start(0);
 
-    const orchestrator = new NightfallOrchestrator({ enableLiveSimulationTimers: false });
+    const orchestrator = new NightfallOrchestrator();
     orchestrators.push(orchestrator);
 
     const keys = generateScopeKeyPair('bench-egress-key');
@@ -150,7 +156,7 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     testbeds.push(testbed);
     const { baseUrl } = await testbed.start(0);
 
-    const orchestrator = new NightfallOrchestrator({ enableLiveSimulationTimers: false });
+    const orchestrator = new NightfallOrchestrator();
     orchestrators.push(orchestrator);
 
     const assessment = await orchestrator.redTeam.runAssessmentAgainstTestbed({
@@ -198,15 +204,18 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
   });
 
   it('3. executes real Two-Stage Test Proof on asset_export.mjs in DisposableSandboxRuntime and suppresses defective/bloated patches', async () => {
-    const orchestrator = new NightfallOrchestrator({ enableLiveSimulationTimers: false });
+    const orchestrator = new NightfallOrchestrator();
     orchestrators.push(orchestrator);
+    await orchestrator.ensureBootstrapped();
 
-    const sec1034 = FindingRecordSchema.parse(
-      orchestrator.getBootstrapState().findings.find((f) => f.id === 'SEC-1034'),
+    const assetFinding = FindingRecordSchema.parse(
+      orchestrator
+        .getBootstrapState()
+        .findings.find((f) => f.repository === 'asset-servicing'),
     );
 
     // A) Minimal surgical patch passes Baseline -> Red (fails on unpatched) -> Green (passes on patched) + Regression + Critic
-    const goodResult = await orchestrator.defenseFactory.runTwoStageModuleProof(sec1034, {
+    const goodResult = await orchestrator.defenseFactory.runTwoStageModuleProof(assetFinding, {
       targetFileName: 'asset_export.mjs',
       unmodifiedSource: UNPATCHED_ASSET_EXPORT_MJS,
       patchedSource: MINIMAL_PATCHED_ASSET_EXPORT_MJS,
@@ -220,6 +229,7 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     });
 
     expect(goodResult.proposal.status).toBe('proposed');
+    expect(goodResult.proposal.commitSha).toMatch(/^[a-f0-9]{40}$/);
     expect(goodResult.proposal.gates).toMatchObject({
       baselineBuildPassed: true,
       redPhaseFailedAsExpected: true,
@@ -231,7 +241,7 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     expect(goodResult.teardownAttestation.sha256Attestation).toMatch(/^[a-f0-9]{64}$/);
 
     // B) Defective patch that hardcodes test actor IDs ('user_proj_b') is suppressed by Critic Gate!
-    const hardcodedResult = await orchestrator.defenseFactory.runTwoStageModuleProof(sec1034, {
+    const hardcodedResult = await orchestrator.defenseFactory.runTwoStageModuleProof(assetFinding, {
       targetFileName: 'asset_export.mjs',
       unmodifiedSource: UNPATCHED_ASSET_EXPORT_MJS,
       patchedSource: DEFECTIVE_HARDCODED_PATCH_ASSET_EXPORT_MJS,
@@ -248,12 +258,12 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     expect(hardcodedResult.proposal.gates.criticNotes).toContain('test-string blocklisting');
   });
 
-  it('4. closes the full loop: Red Team discovery -> Defense Factory fix proposal -> merge -> live post-patch closure verification', async () => {
+  it('4. closes the full loop: Red Team discovery -> Defense Factory Microsoft LiteBox Python fix -> merge -> live post-patch closure verification', async () => {
     const testbed = new NorthstarDocsTestbedServer();
     testbeds.push(testbed);
     const { baseUrl } = await testbed.start(0);
 
-    const orchestrator = new NightfallOrchestrator({ enableLiveSimulationTimers: false });
+    const orchestrator = new NightfallOrchestrator({ stagingTargetUrl: baseUrl });
     orchestrators.push(orchestrator);
 
     // Step 1: Discover and confirm F-001 & F-002 against unpatched staging testbed
@@ -266,14 +276,18 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     });
     orchestrator.ingestAssessmentResult(assessment);
 
-    // Step 2: Obtain / start FixProposal for F-002 and F-001
+    // Step 2: Obtain / start FixProposal for F-002 and F-001 (runs inside real Microsoft LiteBox!)
     const { fix: fixF002 } = await orchestrator.startFixForFinding('F-002');
     const { fix: fixF001 } = await orchestrator.startFixForFinding('F-001');
     expect(fixF002.status).toBe('proposed');
+    expect(fixF002.sandboxBackend).toBe('microsoft-litebox');
+    expect(fixF002.commitSha).toMatch(/^[a-f0-9]{40}$/);
     expect(fixF001.status).toBe('proposed');
+    expect(fixF001.sandboxBackend).toBe('microsoft-litebox');
+    expect(fixF001.commitSha).toMatch(/^[a-f0-9]{40}$/);
 
-    // Step 3: Apply remediations on staging target & run mergeAndVerifyFix with live replay!
-    testbed.applyAllPatches();
+    // Step 3: Apply remediations on staging target & run mergeAndVerifyFix with live replay + LiteBox Python closure check!
+    testbed.setPatched(true);
 
     const verifiedF002 = await orchestrator.mergeAndVerifyFix(fixF002.id, {
       targetBaseUrl: baseUrl,
@@ -285,6 +299,9 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     expect(verifiedF002.finding?.fixVerification).toBe('verified');
     expect(verifiedF002.verificationResult?.securityProbeBlocked).toBe(true);
     expect(verifiedF002.verificationResult?.normalBehaviorPreserved).toBe(true);
+    expect(verifiedF002.verificationResult?.teardownAttestation.backend).toBe(
+      'microsoft-litebox',
+    );
 
     const verifiedF001 = await orchestrator.mergeAndVerifyFix(fixF001.id, {
       targetBaseUrl: baseUrl,
@@ -301,5 +318,56 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     const integrity = orchestrator.auditLedger.verifyIntegrity();
     expect(integrity.valid).toBe(true);
     expect(integrity.checkedCount).toBeGreaterThanOrEqual(8);
+  });
+
+  it('5. executes Python search_exports.py Two-Stage Proof directly inside real Microsoft LiteBox (litebox_runner_linux_userland)', async () => {
+    const orchestrator = new NightfallOrchestrator();
+    orchestrators.push(orchestrator);
+
+    const pythonFinding = FindingRecordSchema.parse({
+      id: 'F-002',
+      title: 'Saved-search background export leaks cross-workspace documents',
+      subtitle: 'northstar-docs · F-002 · Confirmed reproduction',
+      repository: 'northstar-docs',
+      observedRevision: 'e81a442',
+      severity: 'high',
+      status: 'triaged',
+      fixVerification: 'not_recorded',
+      weaknessCwe: 'CWE-862 · Missing authorization',
+      owner: { name: 'Leo', initials: 'L', team: 'Experience', avatarColor: '#dceeff' },
+      sources: ['nightfall', 'red-team'],
+      summary: 'Saved-search export omits per-document ACL verification and SQL parameter binding.',
+      rootCause: 'String-interpolated LIKE clause and missing can_read_document check.',
+      impactAndAttackPath: 'Cross-workspace document leakage in export archive.',
+      preconditions: ['Authenticated workspace session'],
+      remediation: 'Parameterize SQL LIKE query and enforce can_read_document per row.',
+      codeReferences: [{ file: 'northstar_docs/Export/search_exports.py', startLine: 96, endLine: 115 }],
+      rootCauseClusterKey: 'northstar-docs:search-export-acl',
+      createdAt: '2026-11-12T00:00:00.000Z',
+      updatedAt: '2026-11-12T00:00:00.000Z',
+    });
+
+    const proof = await orchestrator.defenseFactory.runTwoStageModuleProof(pythonFinding, {
+      targetFileName: 'search_exports.py',
+      repoFilePath: 'northstar_docs/Export/search_exports.py',
+      repoSecurityTestPath: 'tests/test_search_exports_security.py',
+      unmodifiedSource: UNPATCHED_NORTHSTAR_SEARCH_EXPORTS_PY,
+      patchedSource: MINIMAL_PATCHED_NORTHSTAR_SEARCH_EXPORTS_PY,
+      baselineTestFileName: 'baseline_test.py',
+      baselineTestSource: BASELINE_NORTHSTAR_SEARCH_EXPORTS_TEST_PY,
+      securityTestFileName: 'security_test.py',
+      securityTestSource: SECURITY_NORTHSTAR_SEARCH_EXPORTS_TEST_PY,
+      unifiedDiff: MINIMAL_NORTHSTAR_SEARCH_EXPORTS_DIFF,
+      securityTestDiff: SECURITY_NORTHSTAR_SEARCH_EXPORTS_DIFF,
+      explanation: 'Parameterizes SQL filter and enforces per-document can_read_document check.',
+    });
+
+    expect(proof.proposal.status).toBe('proposed');
+    expect(proof.proposal.sandboxBackend).toBe('microsoft-litebox');
+    expect(proof.teardownAttestation.backend).toBe('microsoft-litebox');
+    expect(proof.proposal.branchName).toBe('nightfall/fix-f-002');
+    expect(proof.proposal.commitSha).toMatch(/^[a-f0-9]{40}$/);
+    expect(proof.proposal.prNumber).toBeUndefined();
+    expect(proof.proposal.prUrl).toBeUndefined();
   });
 });

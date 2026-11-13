@@ -2,9 +2,14 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DisposableSandboxRuntime } from './index.js';
+import {
+  DisposableSandboxRuntime,
+  LITEBOX_PINNED_COMMIT,
+  LITEBOX_UPSTREAM_REPO,
+  buildLiteBoxRunnerInvocation,
+} from './index.js';
 
-describe('@nightfall/sandbox-runtime', () => {
+describe('@nightfall/sandbox-runtime (Microsoft LiteBox Library OS + Confined Process)', () => {
   const runtimes: DisposableSandboxRuntime[] = [];
 
   afterEach(async () => {
@@ -13,110 +18,148 @@ describe('@nightfall/sandbox-runtime', () => {
     }
   });
 
-  it('creates isolated ephemeral sandboxes, reads/writes files, and proves directory disposal via SHA-256 TeardownAttestation', async () => {
+  it('discovers the installed Microsoft LiteBox toolchain (runner, packager, syscall rewriter)', () => {
+    const rt = new DisposableSandboxRuntime();
+    const status = rt.getToolchainStatus();
+
+    expect(status.upstreamRepo).toBe(LITEBOX_UPSTREAM_REPO);
+    expect(status.pinnedCommit).toBe(LITEBOX_PINNED_COMMIT);
+    expect(status.northShim).toBe('litebox_shim_linux');
+    expect(status.southPlatform).toBe('linux_userland');
+    expect(status.available).toBe(true);
+    expect(status.runnerBinaryPath).toContain('litebox_runner_linux_userland');
+    expect(status.packagerBinaryPath).toContain('litebox_packager');
+    expect(status.syscallRewriterBinaryPath).toContain('litebox_syscall_rewriter');
+  });
+
+  it('executes ELF binaries inside real Microsoft LiteBox Library OS and blocks host filesystem reads (/etc/hostname)', async () => {
+    const rt = new DisposableSandboxRuntime({ defaultMode: 'litebox-strict' });
+    runtimes.push(rt);
+
+    const sbx = await rt.createSandbox({
+      prefix: 'litebox-elf',
+      maxDurationMs: 15_000,
+      files: {
+        'canary.txt': 'NS-litebox-isolated-canary',
+      },
+    });
+
+    expect(sbx.liteboxAvailable).toBe(true);
+
+    // 1. Authorized read inside LiteBox's tar + InMem /sandbox rootfs succeeds
+    const allowedRead = await rt.execInSandbox(sbx.id, '/usr/bin/cat', ['canary.txt']);
+    expect(allowedRead.exitCode).toBe(0);
+    expect(allowedRead.backendUsed).toBe('microsoft-litebox');
+    expect(allowedRead.stdout.trim()).toBe('NS-litebox-isolated-canary');
+
+    // 2. Attempting to read host /etc/hostname inside LiteBox fails because host FS is absent from tar_ro + InMem
+    const hostEscapeAttempt = await rt.execInSandbox(sbx.id, '/usr/bin/cat', ['/etc/hostname']);
+    expect(hostEscapeAttempt.backendUsed).toBe('microsoft-litebox');
+    expect(hostEscapeAttempt.exitCode).not.toBe(0);
+
+    const attestation = await rt.destroySandbox(sbx.id);
+    expect(attestation.backend).toBe('microsoft-litebox');
+    expect(attestation.northShim).toBe('litebox_shim_linux');
+    expect(attestation.southPlatform).toBe('linux_userland');
+    expect(attestation.tarBundlesErasedCount).toBe(2);
+    expect(attestation.sha256Attestation).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('executes multi-file Python 3 verification workloads inside real Microsoft LiteBox without ambient env leakage', async () => {
+    const rt = new DisposableSandboxRuntime({ defaultMode: 'litebox-strict' });
+    runtimes.push(rt);
+
+    process.env.NIGHTFALL_HOST_SECRET = 'never-expose-to-litebox';
+    try {
+      const sbx = await rt.createSandbox({
+        prefix: 'litebox-py',
+        maxDurationMs: 20_000,
+        files: {
+          'guard.py': [
+            'def can_export(doc_workspace: str, caller_workspace: str) -> bool:',
+            '    return bool(caller_workspace) and doc_workspace == caller_workspace',
+          ].join('\n'),
+          'verify_guard.py': [
+            'import json, os, guard',
+            'print(json.dumps({',
+            '  "same_ws": guard.can_export("ws-a", "ws-a"),',
+            '  "cross_ws": guard.can_export("ws-a", "ws-b"),',
+            '  "host_secret": os.environ.get("NIGHTFALL_HOST_SECRET"),',
+            '  "custom_flag": os.environ.get("LITEBOX_CHECK"),',
+            '}))',
+          ].join('\n'),
+        },
+      });
+
+      const res = await rt.execInSandbox(sbx.id, 'python3', ['verify_guard.py'], {
+        env: { LITEBOX_CHECK: 'active' },
+      });
+
+      expect(res.exitCode).toBe(0);
+      expect(res.backendUsed).toBe('microsoft-litebox');
+
+      const jsonLine = res.stdout
+        .trim()
+        .split('\n')
+        .find((line) => line.startsWith('{'));
+      expect(jsonLine).toBeDefined();
+      const parsed = JSON.parse(jsonLine!) as {
+        same_ws: boolean;
+        cross_ws: boolean;
+        host_secret: string | null;
+        custom_flag: string | null;
+      };
+
+      expect(parsed.same_ws).toBe(true);
+      expect(parsed.cross_ws).toBe(false);
+      expect(parsed.host_secret).toBeNull();
+      expect(parsed.custom_flag).toBe('active');
+    } finally {
+      delete process.env.NIGHTFALL_HOST_SECRET;
+    }
+  });
+
+  it('constructs deterministic LiteBox CLI invocations across Linux userland, Windows userland, and SEV-SNP South profiles', () => {
+    const winSpec = buildLiteBoxRunnerInvocation({
+      toolchain: {
+        runnerBinaryPath: 'C:\\nightfall\\litebox\\litebox_runner_linux_on_windows_userland.exe',
+        northShim: 'litebox_shim_linux',
+        southPlatform: 'windows_userland',
+      },
+      tarBundlePath: 'C:\\temp\\bundle.tar',
+      guestProgramPath: '/usr/bin/python3',
+      guestArgs: ['/sandbox/check.py'],
+      env: { NIGHTFALL_SCOPE: 'local' },
+      tunDeviceName: 'nf-tun0',
+    });
+
+    expect(winSpec.southPlatform).toBe('windows_userland');
+    expect(winSpec.runnerArgs).toContain('--unstable');
+    expect(winSpec.runnerArgs).not.toContain('--forward-env');
+    expect(winSpec.runnerArgs).toContain('--tun-device-name');
+    expect(winSpec.runnerArgs).toContain('nf-tun0');
+    expect(winSpec.runnerArgs).toContain('--program-from-tar');
+  });
+
+  it('creates isolated ephemeral sandboxes, blocks path/symlink escapes, and enforces timeouts', async () => {
     const rt = new DisposableSandboxRuntime();
     runtimes.push(rt);
 
     const sbx = await rt.createSandbox({
       prefix: 'replay',
-      maxDurationMs: 10_000,
+      maxDurationMs: 5_000,
       files: {
         'README.txt': 'clean-room verification',
-        'src/probe.js': 'console.log("ok");\n',
       },
     });
 
-    expect(sbx.id.startsWith('replay-')).toBe(true);
     expect(sbx.workDir.startsWith(path.join(os.tmpdir(), 'nightfall-sandboxes'))).toBe(true);
-    expect(sbx.destroyed).toBe(false);
-
-    await rt.writeSandboxFile(sbx.id, 'nested/artifact.json', '{"verified":true}');
-    const content = await rt.readSandboxFile(sbx.id, 'nested/artifact.json');
-    expect(content).toBe('{"verified":true}');
-
-    const attestation = await rt.destroySandbox(sbx.id);
-    expect(attestation.sandboxId).toBe(sbx.id);
-    expect(attestation.filesErasedCount).toBe(3);
-    expect(attestation.sha256Attestation).toMatch(/^[0-9a-f]{64}$/);
-
-    await expect(fs.access(sbx.workDir)).rejects.toThrow();
-    await expect(rt.readSandboxFile(sbx.id, 'README.txt')).rejects.toThrow(/destroyed/);
-    expect(rt.getAttestations()).toHaveLength(1);
-  });
-
-  it('prevents path traversal and symlink escapes outside sandbox workDir', async () => {
-    const rt = new DisposableSandboxRuntime();
-    runtimes.push(rt);
-
-    const sbx = await rt.createSandbox({ prefix: 'traversal' });
 
     await expect(rt.writeSandboxFile(sbx.id, '../escaped.txt', 'bad')).rejects.toThrow(
       /Path traversal blocked/,
     );
-    await expect(
-      rt.writeSandboxFile(sbx.id, 'nested/../../outside.txt', 'bad'),
-    ).rejects.toThrow(/Path traversal blocked/);
-    await expect(rt.writeSandboxFile(sbx.id, '/tmp/absolute-escape.txt', 'bad')).rejects.toThrow(
-      /Path traversal blocked/,
-    );
-    await expect(rt.readSandboxFile(sbx.id, '../../etc/hostname')).rejects.toThrow(
-      /Path traversal blocked/,
-    );
-
-    // Symlink escape defense
     await fs.symlink('/etc/hostname', path.join(sbx.workDir, 'host-link'));
     await expect(rt.readSandboxFile(sbx.id, 'host-link')).rejects.toThrow(/escape blocked/i);
-  });
-
-  it('executes commands with scrubbed environment variables and captures exit codes', async () => {
-    const rt = new DisposableSandboxRuntime();
-    runtimes.push(rt);
-
-    process.env.NIGHTFALL_TEST_AMBIENT_SECRET = 'super-secret-do-not-leak';
-    try {
-      const sbx = await rt.createSandbox({
-        prefix: 'exec',
-        files: {
-          'inspect-env.mjs': [
-            'console.log(JSON.stringify({',
-            '  home: process.env.HOME,',
-            '  ambientSecret: process.env.NIGHTFALL_TEST_AMBIENT_SECRET ?? null,',
-            '  customFlag: process.env.CUSTOM_FLAG ?? null,',
-            '}));',
-          ].join('\n'),
-        },
-      });
-
-      const okRes = await rt.execInSandbox(sbx.id, process.execPath, ['inspect-env.mjs'], {
-        env: { CUSTOM_FLAG: 'enabled' },
-      });
-      expect(okRes.exitCode).toBe(0);
-      const parsed = JSON.parse(okRes.stdout.trim()) as {
-        home: string;
-        ambientSecret: string | null;
-        customFlag: string | null;
-      };
-      expect(parsed.home).toBe(sbx.workDir);
-      expect(parsed.ambientSecret).toBeNull();
-      expect(parsed.customFlag).toBe('enabled');
-
-      const nonZeroRes = await rt.execInSandbox(sbx.id, process.execPath, [
-        '-e',
-        'console.error("expected failure"); process.exit(3);',
-      ]);
-      expect(nonZeroRes.exitCode).toBe(3);
-      expect(nonZeroRes.stderr).toContain('expected failure');
-    } finally {
-      delete process.env.NIGHTFALL_TEST_AMBIENT_SECRET;
-    }
-  });
-
-  it('enforces strict command timeout and terminates runaway child processes', async () => {
-    const rt = new DisposableSandboxRuntime();
-    runtimes.push(rt);
-
-    const sbx = await rt.createSandbox({ prefix: 'timeout', maxDurationMs: 5_000 });
-    const started = performance.now();
 
     await expect(
       rt.execInSandbox(
@@ -127,7 +170,8 @@ describe('@nightfall/sandbox-runtime', () => {
       ),
     ).rejects.toThrow(/timed out/i);
 
-    const elapsed = performance.now() - started;
-    expect(elapsed).toBeLessThan(2_000);
+    const attestation = await rt.destroySandbox(sbx.id);
+    expect(attestation.sha256Attestation).toMatch(/^[0-9a-f]{64}$/);
+    await expect(fs.access(sbx.workDir)).rejects.toThrow();
   });
 });

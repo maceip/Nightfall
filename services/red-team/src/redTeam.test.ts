@@ -11,6 +11,13 @@ import { AuditLedger } from '@nightfall/audit-ledger';
 import { PolicyGate } from '@nightfall/policy-gate';
 import { EgressPolicyProxy } from './egressProxy.js';
 import { RedTeamEngine } from './redTeamEngine.js';
+import {
+  STAGING_ALICE_TOKEN,
+  STAGING_BOB_TOKEN,
+  STAGING_WS_A_CANARY,
+  STAGING_WS_CHANNEL_CANARY,
+  startStagingTargetServer,
+} from './stagingTargetServer.js';
 
 describe('@nightfall/red-team EgressPolicyProxy & RedTeamEngine', () => {
   const cleanups: Array<() => Promise<void>> = [];
@@ -262,5 +269,94 @@ describe('@nightfall/red-team EgressPolicyProxy & RedTeamEngine', () => {
     expect(dispositions[0]?.disposition).toBe('discarded_fp');
     expect(dispositions[1]?.disposition).toBe('discarded_fp');
     expect(dispositions[2]?.disposition).toBe('needs_runtime_check');
-  });
+  }, 15_000);
+
+  it('runs multi-tenant StagingTargetServer across vulnerable and patched modes via EgressPolicyProxy', async () => {
+    const staging = await startStagingTargetServer(0);
+    cleanups.push(() => staging.close());
+
+    // /api/me for Alice & Bob
+    const aliceMe = await fetch(`${staging.baseUrl}/api/me`, {
+      headers: { Authorization: `Bearer ${STAGING_ALICE_TOKEN}` },
+    });
+    expect(aliceMe.status).toBe(200);
+    expect(await aliceMe.json()).toMatchObject({ user: 'alice', workspaceName: 'Workspace A' });
+
+    // /api/workspaces/ws_a/docs blocks Bob with 403
+    const bobWsADocs = await fetch(`${staging.baseUrl}/api/workspaces/ws_a/docs`, {
+      headers: { Authorization: `Bearer ${STAGING_BOB_TOKEN}` },
+    });
+    expect(bobWsADocs.status).toBe(403);
+
+    // /internal/sanitized strips unsafe characters, /internal/unreachable returns 404
+    const sanRes = await fetch(`${staging.baseUrl}/internal/sanitized?q=alpha<script>1`);
+    expect(sanRes.status).toBe(200);
+    expect(await sanRes.json()).toEqual({ ok: true, sanitized: true, safeToken: 'alphascript1' });
+    const unreachRes = await fetch(`${staging.baseUrl}/internal/unreachable`);
+    expect(unreachRes.status).toBe(404);
+
+    // POST /api/exports/saved-search in vulnerable vs patched mode
+    const vulnExport = await fetch(`${staging.baseUrl}/api/exports/saved-search`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${STAGING_BOB_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ titleContains: 'Checklist' }),
+    });
+    const vulnJson = (await vulnExport.json()) as { archiveEntries: Array<{ text: string }> };
+    expect(vulnJson.archiveEntries.some((e) => e.text.includes(STAGING_WS_A_CANARY))).toBe(true);
+
+    staging.setPatched(true);
+    const patchedExport = await fetch(`${staging.baseUrl}/api/exports/saved-search`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${STAGING_BOB_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ titleContains: 'Checklist' }),
+    });
+    const patchedJson = (await patchedExport.json()) as { archiveEntries: Array<{ text: string }> };
+    expect(patchedJson.archiveEntries).toHaveLength(0);
+
+    // Reset to vulnerable and run full RedTeamEngine.runAssessment with strict scope redirect
+    staging.setPatched(false);
+    const engine = new RedTeamEngine();
+    const keys = generateScopeKeyPair('staging-redirect-key');
+    const signedManifest = signCampaignManifest(
+      {
+        objective: 'Check Northstar staging with strict scope redirect',
+        campaign: {
+          name: 'northstar-docs-staging',
+          targets: ['https://staging.northstardocs.com'],
+          source: { repository: 'northstar-docs' },
+          max_duration: '30m',
+          max_requests_per_second: 50,
+        },
+        credentials: {},
+        http: { allow: [{ methods: ['GET', 'POST'], path_prefixes: ['/'] }] },
+        websocket: {
+          allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
+        },
+      },
+      keys.privateKeyPem,
+      keys.keyId,
+    );
+
+    const assessment = await engine.runAssessment({
+      campaignId: 'camp-rt-live',
+      targetBaseUrl: 'https://staging.northstardocs.com',
+      signedManifest,
+      publicKeyPem: keys.publicKeyPem,
+      targetTransportRedirects: {
+        'https://staging.northstardocs.com': staging.baseUrl,
+      },
+      includeMutatingProbe: true,
+    });
+
+    expect(assessment.confirmedFindings.map((f) => f.id).sort()).toEqual(['F-001', 'F-002']);
+    expect(assessment.evidenceBundles.some((ev) => ev.canaryMarker === STAGING_WS_CHANNEL_CANARY)).toBe(true);
+    expect(assessment.evidenceBundles.some((ev) => ev.canaryMarker === STAGING_WS_A_CANARY)).toBe(true);
+    expect(assessment.pendingApprovals).toHaveLength(1);
+  }, 20_000);
 });

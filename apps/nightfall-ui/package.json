@@ -1,28 +1,54 @@
 {
   "name": "@nightfall/nightfall-ui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
+  "productName": "Nightfall",
+  "description": "Nightfall Three-Column Desktop & Web Console (Red Team + Defense Factory)",
+  "author": {
+    "name": "Nightfall Security",
+    "email": "security@nightfall.dev"
+  },
   "type": "module",
+  "main": "out/main/index.js",
   "exports": {
     ".": "./src/index.ts"
   },
   "scripts": {
     "dev:web": "vite --host 0.0.0.0 --port 5173",
-    "dev:desktop": "node electron/launch.cjs",
+    "dev:desktop": "pnpm run build:electron && node electron/launch.cjs",
     "build": "tsc --noEmit && vite build",
+    "build:electron": "tsup --config tsup.config.ts",
+    "build:desktop": "node ../../scripts/generate-desktop-icons.mjs && tsc --noEmit && vite build && tsup --config tsup.config.ts",
+    "bundle": "node scripts/bundle-desktop.mjs",
+    "bundle:dmg": "node scripts/bundle-desktop.mjs --os mac --arch arm64 --targets dmg",
+    "bundle:msi": "node scripts/bundle-desktop.mjs --os win --arch x64 --targets msi",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@nightfall/core-contracts": "workspace:*",
-    "@nightfall/mock-fixtures": "workspace:*",
     "@nightfall/ui-kit": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lucide-react": "^0.477.0"
+    "ws": "^8.18.1"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
+    "@nightfall/api-gateway": "workspace:*",
+    "@nightfall/audit-ledger": "workspace:*",
+    "@nightfall/closed-loop-orchestrator": "workspace:*",
+    "@nightfall/defense-factory": "workspace:*",
+    "@nightfall/model-gateway": "workspace:*",
+    "@nightfall/policy-gate": "workspace:*",
+    "@nightfall/red-team": "workspace:*",
+    "@nightfall/sandbox-runtime": "workspace:*",
+    "@nightfall/shared-memory": "workspace:*",
+    "@tailwindcss/vite": "^4.1.18",
+    "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
-    "@testing-library/jest-dom": "^6.6.3"
+    "electron": "41.0.3",
+    "electron-builder": "^26.8.1",
+    "tailwindcss": "^4.1.18",
+    "tsup": "8.5.0"
   }
 }

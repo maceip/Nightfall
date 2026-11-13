@@ -1,6 +1,9 @@
 node_modules/
 dist/
+dist-electron/
 build/
+!apps/nightfall-ui/build/
+!apps/nightfall-ui/build/**
 out/
 release/
 *.tsbuildinfo
@@ -9,3 +12,7 @@ release/
 .env.*
 coverage/
 .tmp-sandboxes/
+.nightfall-data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

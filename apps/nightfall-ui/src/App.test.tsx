@@ -2,78 +2,111 @@
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
+import { Button, SankeyDiagram } from '@nightfall/ui-kit';
+import { setNightfallApiBaseUrl } from './api/nightfall-client.js';
 import { App } from './App.js';
+import { type EphemeralTestServer, startContractValidatedTestServer } from './test-http-server.js';
 
-afterEach(() => {
+let testServer: EphemeralTestServer | null = null;
+
+afterEach(async () => {
   cleanup();
+  if (testServer) {
+    await testServer.close();
+    testServer = null;
+  }
 });
 
-describe('@nightfall/nightfall-ui Three-Column Shell & Views', () => {
-  it('renders Nightfall sidebar branding, Sankey Findings, Defense Factory drawers, and Red Team views with zero legacy labels', async () => {
-    const { container } = render(<App />);
+describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', () => {
+  it('renders Nightfall shell, Defense Factory drawers, Microsoft LiteBox status, and Red Team views against real HTTP endpoints with zero mock fallbacks', async () => {
+    testServer = await startContractValidatedTestServer({ failFirstBootstrap: true });
+    setNightfallApiBaseUrl(testServer.baseUrl);
 
-    // Wait for bootstrap state to render
+    const { container } = render(
+      <>
+        <Button className="hidden">Kit check</Button>
+        <SankeyDiagram
+          totalOpen={0}
+          severityCounts={{ critical: 0, high: 0, medium: 0, low: 0, informational: 0 }}
+          statusCounts={{ new: 0, triaged: 0, in_progress: 0 }}
+          links={[]}
+          selectedSeverity={null}
+          onSelectSeverity={() => {}}
+          className="hidden"
+        />
+        <App />
+      </>,
+    );
+
+    // 1. Real error state when /api/bootstrap fails (proving zero silent mock fallback)
+    await waitFor(() => {
+      expect(screen.getByText('Nightfall API Unavailable')).toBeTruthy();
+    });
+    fireEvent.click(screen.getByText('Retry connection'));
+
+    // 2. Live bootstrap state renders cleanly with zero legacy brand strings or NaN
     await waitFor(() => {
       expect(screen.getByText('Nightfall')).toBeTruthy();
     });
+    expect(document.body.innerHTML.toLowerCase()).not.toContain('daybreak');
+    expect(document.body.innerHTML.toLowerCase()).not.toContain('codex');
+    expect(container.innerHTML).not.toContain('NaN');
 
-    // Enforce zero legacy brand leakage anywhere in rendered DOM
-    expect(container.innerHTML.toLowerCase()).not.toContain('daybreak');
-    expect(container.innerHTML.toLowerCase()).not.toContain('codex');
-
-    // Findings Sankey click-to-focus on Critical (31)
-    const criticalNode = container.querySelector('#sankey-node-critical');
-    expect(criticalNode).toBeTruthy();
-    fireEvent.click(criticalNode!);
+    // 3. Sankey click-to-focus + Finding Detail + Fix with Nightfall Drawer
+    fireEvent.click(document.querySelectorAll('#sankey-node-critical')[1]!);
     await waitFor(() => {
-      expect(container.querySelector('#findings-sankey-focused')).toBeTruthy();
+      expect(document.querySelector('#findings-sankey-focused')).toBeTruthy();
     });
-
-    // Clear Sankey filter and open SEC-1034 Finding Detail + Fix with Nightfall drawer
-    fireEvent.click(container.querySelector('#btn-reset-sankey-filter')!);
-    fireEvent.click(container.querySelector('#finding-row-SEC-1034')!);
+    fireEvent.click(document.querySelector('#btn-reset-sankey-filter')!);
+    fireEvent.click(document.querySelector('#finding-row-SEC-1034')!);
     await waitFor(() => {
       expect(screen.getByText('REPORTED SEVERITY')).toBeTruthy();
     });
-    fireEvent.click(container.querySelector('#btn-detail-open-fix')!);
+    fireEvent.click(document.querySelector('#btn-detail-open-fix')!);
     await waitFor(() => {
       expect(screen.getByText('Fix with Nightfall')).toBeTruthy();
+      expect(screen.getByText('nightfall/fix-sec-1034')).toBeTruthy();
     });
-    fireEvent.click(container.querySelector('#btn-close-fix-drawer')!);
-
-    // Navigate across Overview, Fixes, Repositories, and New Scan drawer
-    fireEvent.click(container.querySelector('#nav-btn-overview')!);
+    fireEvent.click(document.querySelector('#btn-merge-and-verify')!);
     await waitFor(() => {
-      expect(screen.getByText('Proposed fixes')).toBeTruthy();
+      expect(screen.getByText('Merged & Verified Closed ✓')).toBeTruthy();
     });
+    fireEvent.click(document.querySelector('#btn-close-fix-drawer')!);
 
-    fireEvent.click(container.querySelector('#nav-btn-repositories')!);
+    // 4. Overview, Repositories, Settings (Microsoft LiteBox), and Local New Scan passing localPath
+    fireEvent.click(document.querySelector('#nav-btn-overview')!);
+    await waitFor(() => expect(screen.getByText('Proposed fixes')).toBeTruthy());
+
+    fireEvent.click(document.querySelector('#nav-btn-repositories')!);
+    await waitFor(() => expect(screen.getByText('PR review coverage')).toBeTruthy());
+
+    fireEvent.click(document.querySelector('#nav-btn-settings')!);
     await waitFor(() => {
-      expect(screen.getByText('PR review coverage')).toBeTruthy();
+      expect(screen.getByText('Microsoft LiteBox Library OS Sandbox')).toBeTruthy();
+      expect(screen.getByText('litebox_shim_linux')).toBeTruthy();
     });
 
-    fireEvent.click(container.querySelector('#nav-btn-new-scan')!);
+    fireEvent.click(document.querySelector('#nav-btn-new-scan')!);
+    await waitFor(() => expect(screen.getByText('Scan method')).toBeTruthy());
+    fireEvent.click(document.querySelector('#btn-scan-mode-local')!);
+    fireEvent.click(document.querySelector('#btn-submit-start-scan')!);
     await waitFor(() => {
-      expect(screen.getByText('Scan method')).toBeTruthy();
+      expect(testServer?.capturedScans[0]?.mode).toBe('local');
+      expect(testServer?.capturedScans[0]?.localPath).toBe('/workspace/northstar-docs');
     });
-    fireEvent.click(container.querySelector('#btn-close-new-scan')!);
 
-    // Switch to Nightfall Red Team live campaign, F-002 report, and campaign.yaml split builder
-    fireEvent.click(container.querySelector('#nav-btn-red-team')!);
+    // 5. Red Team Live Campaign, Finding Report (NS-7b64c9e2), and campaign.yaml v5 builder
+    fireEvent.click(document.querySelector('#nav-btn-red-team')!);
     await waitFor(() => {
       expect(screen.getByText('Safety monitor')).toBeTruthy();
-      expect(screen.getByText('Nine findings confirmed')).toBeTruthy();
+      expect(screen.getByText('Confirmed cross-tenant finding')).toBeTruthy();
     });
-
-    fireEvent.click(container.querySelector('#rt-finding-row-F-002')!);
+    fireEvent.click(document.querySelector('#rt-finding-row-SEC-1034')!);
     await waitFor(() => {
-      expect(screen.getAllByText('Architecture').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Open Tested Fix in Defense Factory →')).toBeTruthy();
+      expect(screen.getByText('See the private document in the downloaded ZIP ↓')).toBeTruthy();
+      expect(screen.getByText('Promote to Defense Factory')).toBeTruthy();
     });
-
-    fireEvent.click(container.querySelector('#top-tab-campaign-yaml')!);
-    await waitFor(() => {
-      expect(screen.getByText('Download v5 YAML')).toBeTruthy();
-    });
+    fireEvent.click(document.querySelector('#top-tab-campaign-yaml')!);
+    await waitFor(() => expect(screen.getByText('Download v5 YAML')).toBeTruthy());
   });
 });

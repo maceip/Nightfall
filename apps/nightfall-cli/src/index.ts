@@ -23,6 +23,7 @@ export interface CliExecutionResult {
 
 export interface RunCliOptions {
   orchestrator?: NightfallOrchestrator;
+  sqlitePath?: string;
   cwd?: string;
 }
 
@@ -158,10 +159,18 @@ export async function runNightfallCli(
   if (command === 'status') {
     const ownOrchestrator = !options?.orchestrator;
     const orchestrator =
-      options?.orchestrator ?? new NightfallOrchestrator({ enableLiveSimulationTimers: false });
+      options?.orchestrator ??
+      new NightfallOrchestrator({
+        sqlitePath: options?.sqlitePath ?? process.env.NIGHTFALL_SQLITE_PATH ?? ':memory:',
+      });
     try {
+      await orchestrator.ensureBootstrapped();
       const state = orchestrator.getBootstrapState();
       const activeCampaign = state.campaigns[0];
+      const liteboxLabel = state.sandboxToolchain.available
+        ? `Microsoft LiteBox (ready · ${state.sandboxToolchain.southPlatform})`
+        : 'process-confined fallback';
+
       const stdout = [
         'Nightfall Platform Status',
         `  Open Findings     : ${state.overview.openFindingsCount}`,
@@ -169,6 +178,7 @@ export async function runNightfallCli(
         `  Proposed Fixes    : ${state.overview.proposedFixesCount}`,
         `  Repositories      : ${state.repositories.filter((r) => r.prReviewsEnabled).length}/${state.repositories.length} monitored`,
         `  Active Campaign   : ${activeCampaign ? `${activeCampaign.name} (${activeCampaign.status})` : 'none'}`,
+        `  Sandbox Backend   : ${liteboxLabel}`,
         `  Safety Monitor    : ${state.safetyMonitor.message}`,
         `  Kill-Switch       : ${state.killSwitchEngaged ? 'ENGAGED' : 'nominal (disengaged)'}`,
       ].join('\n');
@@ -180,7 +190,7 @@ export async function runNightfallCli(
       };
     } finally {
       if (ownOrchestrator) {
-        orchestrator.dispose();
+        await orchestrator.dispose();
       }
     }
   }
@@ -199,14 +209,20 @@ export async function runNightfallCli(
         const entries = JSON.parse(rawJson) as AuditEntry[];
         ledger = new AuditLedger({ initialEntries: entries });
       } else if (options?.orchestrator) {
+        await options.orchestrator.ensureBootstrapped();
         ledger = options.orchestrator.auditLedger;
       } else {
-        ownOrchestrator = new NightfallOrchestrator({ enableLiveSimulationTimers: false });
+        ownOrchestrator = new NightfallOrchestrator({
+          sqlitePath: options?.sqlitePath ?? process.env.NIGHTFALL_SQLITE_PATH ?? ':memory:',
+        });
+        await ownOrchestrator.ensureBootstrapped();
         ledger = ownOrchestrator.auditLedger;
       }
 
       const verification = ledger.verifyIntegrity();
-      ownOrchestrator?.dispose();
+      if (ownOrchestrator) {
+        await ownOrchestrator.dispose();
+      }
 
       if (!verification.valid) {
         return {

@@ -3,9 +3,39 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { verifySignedCampaignManifest } from '@nightfall/core-contracts';
-import { NORTHSTAR_CAMPAIGN_YAML } from '@nightfall/mock-fixtures';
 import { AuditLedger } from '@nightfall/audit-ledger';
 import { runNightfallCli } from './index.js';
+
+const SAMPLE_NORTHSTAR_CAMPAIGN_YAML = `objective: Check multi-tenant document and workspace access boundaries.
+
+campaign:
+  name: northstar-docs-staging
+  targets:
+    - https://staging.northstardocs.com
+  source:
+    archive: northstar-docs-source.tar.gz
+  max_duration: 8h
+  max_requests_per_second: 10
+
+credentials:
+  alice:
+    file: credentials/alice.token
+    workspaceHint: Workspace A
+  bob:
+    file: credentials/bob.token
+    workspaceHint: Workspace B
+
+http:
+  allow:
+    - methods: [GET, POST]
+      path_prefixes: [/]
+
+websocket:
+  allow:
+    - paths: [/ws/documents]
+      origins: ["*"]
+      operations: [open, send]
+`;
 
 describe('@nightfall/nightfall-cli commands', () => {
   const tempDirs: string[] = [];
@@ -19,12 +49,12 @@ describe('@nightfall/nightfall-cli commands', () => {
     }
   });
 
-  it('supports validate, sign, status, and verify-audit (detecting tampering)', async () => {
+  it('supports validate, sign, status (with real SQLite + LiteBox state), and verify-audit (detecting tampering)', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nf-cli-test-'));
     tempDirs.push(tmpDir);
 
     const yamlPath = path.join(tmpDir, 'campaign.yaml');
-    await fs.writeFile(yamlPath, NORTHSTAR_CAMPAIGN_YAML, 'utf8');
+    await fs.writeFile(yamlPath, SAMPLE_NORTHSTAR_CAMPAIGN_YAML, 'utf8');
 
     // 1. validate
     const valRes = await runNightfallCli(['validate', yamlPath]);
@@ -47,11 +77,12 @@ describe('@nightfall/nightfall-cli commands', () => {
       verifySignedCampaignManifest(signRes.signedManifest!, signRes.publicKeyPem!),
     ).toBe(true);
 
-    // 3. status
+    // 3. status (bootstraps real scanned workspace + Microsoft LiteBox proofs)
     const statusRes = await runNightfallCli(['status']);
     expect(statusRes.exitCode).toBe(0);
     expect(statusRes.stdout).toContain('Nightfall Platform Status');
-    expect(statusRes.stdout).toContain('550');
+    expect(statusRes.stdout).toContain('Microsoft LiteBox (ready');
+    expect(statusRes.stdout).toMatch(/Open Findings\s+:\s+[1-9]\d*/);
 
     // 4. verify-audit on intact vs tampered ledger JSON
     const ledger = new AuditLedger();

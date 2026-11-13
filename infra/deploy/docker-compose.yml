@@ -1,22 +1,27 @@
-# Nightfall Local Full-Stack & Network-Isolated Sandbox Topology
+# Nightfall Full-Stack & Microsoft LiteBox Isolated Sandbox Topology
 services:
   api-gateway:
     build:
       context: ../..
-      dockerfile: infra/sandbox-images/Dockerfile.sandbox
+      dockerfile: infra/litebox/Dockerfile.litebox
     working_dir: /workspace
     volumes:
       - ../..:/workspace
+      - nightfall_data:/sandbox/.local/share/nightfall
+    environment:
+      - NIGHTFALL_LITEBOX_BIN_DIR=/opt/nightfall/litebox/bin
+      - NIGHTFALL_SQLITE_PATH=/sandbox/.local/share/nightfall/nightfall.sqlite
     command: ["npx", "tsx", "services/api-gateway/src/server.ts"]
     ports:
       - "4000:4000"
     networks:
       - control_plane_net
+      - isolated_sandbox_net
 
   nightfall-ui:
     build:
       context: ../..
-      dockerfile: infra/sandbox-images/Dockerfile.sandbox
+      dockerfile: infra/litebox/Dockerfile.litebox
     working_dir: /workspace/apps/nightfall-ui
     volumes:
       - ../..:/workspace
@@ -30,22 +35,25 @@ services:
     networks:
       - control_plane_net
 
-  # Isolated verification sandbox network (internal: true blocks all direct internet egress;
+  # Zero-egress Microsoft LiteBox runner pool (internal: true blocks all direct internet egress;
   # outbound requests must traverse the Nightfall L7 HTTP + WebSocket Egress Policy Proxy).
-  red-team-sandbox-template:
+  litebox-sandbox-runner:
     build:
       context: ../..
-      dockerfile: infra/sandbox-images/Dockerfile.sandbox
+      dockerfile: infra/litebox/Dockerfile.litebox
     read_only: true
     tmpfs:
-      - /tmp:size=64m,noexec,nosuid
-      - /sandbox:size=128m,nosuid
+      - /tmp:size=128m,nosuid
+      - /sandbox:size=256m,nosuid
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
     networks:
       - isolated_sandbox_net
+
+volumes:
+  nightfall_data:
 
 networks:
   control_plane_net:

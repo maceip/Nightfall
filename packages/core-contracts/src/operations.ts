@@ -17,18 +17,36 @@ export const RepositoryRecordSchema = z.object({
   lastCompletedScanLabel: z.string(),
   needsAttention: z.boolean(),
   openFindingsCount: z.number().int().nonnegative(),
+  localPath: z.string().optional(),
+  cloneUrl: z.string().optional(),
 });
 export type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
 
 export const NewScanRequestSchema = z.object({
   mode: z.enum(['cloud', 'local']),
   repository: z.string().min(1),
+  localPath: z.string().optional(),
+  cloneUrl: z.string().optional(),
   method: z.enum(['repository_scan', 'continuous_monitoring', 'scheduled_scan']),
   scope: z.enum(['full_repository', 'specific_paths']),
   paths: z.array(z.string()).optional(),
   scheduleCron: z.string().optional(),
 });
 export type NewScanRequest = z.infer<typeof NewScanRequestSchema>;
+
+export const SandboxToolchainStatusSchema = z.object({
+  available: z.boolean(),
+  binDir: z.string().nullable(),
+  runnerBinaryPath: z.string().nullable(),
+  packagerBinaryPath: z.string().nullable(),
+  syscallRewriterBinaryPath: z.string().nullable(),
+  pythonStdlibZipPath: z.string().nullable(),
+  northShim: z.enum(['litebox_shim_linux', 'litebox_shim_optee']),
+  southPlatform: z.enum(['linux_userland', 'windows_userland', 'sev_snp', 'lvbs']),
+  upstreamRepo: z.string(),
+  pinnedCommit: z.string(),
+});
+export type SandboxToolchainStatus = z.infer<typeof SandboxToolchainStatusSchema>;
 
 export const ScanJobRecordSchema = z.object({
   id: z.string(),

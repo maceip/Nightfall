@@ -7,14 +7,17 @@ import {
   parseCampaignYaml,
   serializeCampaignYaml,
   signCampaignManifest,
+  type CampaignActivityPoint,
   type CampaignYamlV5,
   type EndpointHitRecord,
   type EvidenceBundle,
   type FindingRecord,
   type FixProposal,
   type FixVerificationStatus,
+  type HitlApprovalRequest,
   type RedTeamCampaignRun,
   type SharedKnowledgeNode,
+  type SignedScopeManifest,
   type WorkQueueItem,
 } from '@nightfall/core-contracts';
 import { AuditLedger } from '@nightfall/audit-ledger';
@@ -26,6 +29,13 @@ import {
 } from '@nightfall/sandbox-runtime';
 import { SharedKnowledgeStore } from '@nightfall/shared-memory';
 import { EgressPolicyProxy } from './egressProxy.js';
+import {
+  STAGING_ALICE_TOKEN,
+  STAGING_ALICE_WORKSPACE_ID,
+  STAGING_BOB_TOKEN,
+  STAGING_BOB_WORKSPACE_ID,
+  STAGING_WS_A_CANARY,
+} from './stagingTargetServer.js';
 
 export interface RedTeamEngineDeps {
   sandboxRuntime?: DisposableSandboxRuntime;
@@ -65,6 +75,11 @@ export interface RunAssessmentInput {
   bobWorkspaceId?: string;
   askForApproval?: boolean;
   modelId?: string;
+  observedRevision?: string;
+  signedManifest?: SignedScopeManifest;
+  publicKeyPem?: string;
+  targetTransportRedirects?: Record<string, string>;
+  includeMutatingProbe?: boolean;
   externalFindings?: ExternalStaticFindingInput[];
 }
 
@@ -76,6 +91,8 @@ export interface AssessmentRunResult {
   endpointHits: EndpointHitRecord[];
   workQueue: WorkQueueItem[];
   sharedKnowledge: SharedKnowledgeNode[];
+  pendingApprovals: HitlApprovalRequest[];
+  activitySeries: CampaignActivityPoint[];
   teardownAttestation: TeardownAttestation;
   withinApprovedScope: boolean;
 }
@@ -119,6 +136,10 @@ function toWsBaseUrl(httpBaseUrl: string): string {
   return `${proto}//${parsed.host}`;
 }
 
+function stripTrailingSlash(url: string): string {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
 export class RedTeamEngine {
   private readonly sandboxRuntime: DisposableSandboxRuntime;
   private readonly policyGate: PolicyGate;
@@ -141,7 +162,9 @@ export class RedTeamEngine {
     const sourceLabel = input.sourceLabel?.trim() || 'staging-source-snapshot.tar.gz';
 
     const manifestObj: CampaignYamlV5 = {
-      objective: input.prompt.trim() || 'Verify tenant isolation and workspace authorization boundaries.',
+      objective:
+        input.prompt.trim() ||
+        'Verify tenant isolation and workspace authorization boundaries.',
       campaign: {
         name: slug,
         targets: [input.targetUrl],
@@ -167,7 +190,8 @@ export class RedTeamEngine {
     const initialQueue: WorkQueueItem[] = [
       {
         id: `wq-${crypto.randomUUID().slice(0, 6)}`,
-        hypothesis: 'Verify WebSocket /ws/documents enforces workspace ACL on channel subscribe frames',
+        hypothesis:
+          'Verify WebSocket /ws/documents enforces workspace ACL on channel subscribe frames',
         category: 'Tenant Isolation (WebSocket)',
         assignedAgent: 'verifier-alpha',
         riskTier: 'TIER_1_SAFE_PROBE',
@@ -176,7 +200,8 @@ export class RedTeamEngine {
       },
       {
         id: `wq-${crypto.randomUUID().slice(0, 6)}`,
-        hypothesis: 'Compare interactive search vs. background export query scoping and per-document ACL',
+        hypothesis:
+          'Compare interactive search vs. background export query scoping and per-document ACL',
         category: 'Data Flow Differential',
         assignedAgent: 'verifier-beta',
         riskTier: 'TIER_1_SAFE_PROBE',
@@ -190,7 +215,8 @@ export class RedTeamEngine {
         id: `sk-${crypto.randomUUID().slice(0, 6)}`,
         kind: 'identity',
         title: 'Synthetic Staging Principals Configured',
-        detail: 'Isolated accounts alice (Workspace A) and bob (Workspace B) loaded for non-destructive boundary checks.',
+        detail:
+          'Isolated accounts alice (Workspace A) and bob (Workspace B) loaded for non-destructive boundary checks.',
         discoveredBy: 'nightfall-planner',
         createdAt: nowIso,
       },
@@ -261,70 +287,105 @@ export class RedTeamEngine {
     });
   }
 
-  async runAssessmentAgainstTestbed(input: RunAssessmentInput): Promise<AssessmentRunResult> {
+  async runAssessment(input: RunAssessmentInput): Promise<AssessmentRunResult> {
     const campaignId = input.campaignId ?? `camp-live-${crypto.randomUUID().slice(0, 8)}`;
-    const bobToken = input.bobToken ?? 'tok-bob-ws-b';
-    const bobWorkspaceId = input.bobWorkspaceId ?? '90b2e16a-70d2-4c1d-b8e5-5f34609f8a2c';
+    const targetBaseUrl = stripTrailingSlash(input.targetBaseUrl);
+    const aliceToken = input.aliceToken ?? STAGING_ALICE_TOKEN;
+    const bobToken = input.bobToken ?? STAGING_BOB_TOKEN;
+    const aliceWorkspaceId = input.aliceWorkspaceId ?? STAGING_ALICE_WORKSPACE_ID;
+    const bobWorkspaceId = input.bobWorkspaceId ?? STAGING_BOB_WORKSPACE_ID;
     const modelId = input.modelId ?? 'nightfall-local-verifier';
     const askForApproval = input.askForApproval ?? true;
+    const observedRevision = input.observedRevision ?? 'e81a442';
 
-    const keyPair = generateScopeKeyPair(`key-${campaignId}`);
-    const manifest: CampaignYamlV5 = {
-      objective: 'Verify multi-tenant document and workspace access boundaries.',
-      campaign: {
-        name: `${campaignId}-scope`,
-        targets: [input.targetBaseUrl],
-        source: { archive: 'northstar-docs-source.tar.gz' },
-        max_duration: '30m',
-        max_requests_per_second: 50,
-      },
-      credentials: {
-        alice: { file: 'credentials/alice.token', workspaceHint: 'Workspace A' },
-        bob: { file: 'credentials/bob.token', workspaceHint: 'Workspace B' },
-      },
-      http: {
-        allow: [{ methods: ['GET', 'POST'], path_prefixes: ['/'] }],
-      },
-      websocket: {
-        allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
-      },
-    };
-    const signedManifest = signCampaignManifest(manifest, keyPair.privateKeyPem, keyPair.keyId);
+    let signedManifest = input.signedManifest;
+    let publicKeyPem = input.publicKeyPem;
+    if (!signedManifest || !publicKeyPem) {
+      const keyPair = generateScopeKeyPair(`key-${campaignId}`);
+      const manifest: CampaignYamlV5 = {
+        objective: 'Verify multi-tenant document and workspace access boundaries.',
+        campaign: {
+          name: `${campaignId}-scope`,
+          targets: [targetBaseUrl],
+          source: { archive: 'northstar-docs-source.tar.gz' },
+          max_duration: '30m',
+          max_requests_per_second: 50,
+        },
+        credentials: {
+          alice: { file: 'credentials/alice.token', workspaceHint: 'Workspace A' },
+          bob: { file: 'credentials/bob.token', workspaceHint: 'Workspace B' },
+        },
+        http: {
+          allow: [{ methods: ['GET', 'POST'], path_prefixes: ['/'] }],
+        },
+        websocket: {
+          allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
+        },
+      };
+      signedManifest = signCampaignManifest(manifest, keyPair.privateKeyPem, keyPair.keyId);
+      publicKeyPem = keyPair.publicKeyPem;
+    }
 
     const proxy = new EgressPolicyProxy({
       signedManifest,
-      publicKeyPem: keyPair.publicKeyPem,
+      publicKeyPem,
       campaignId,
       askForApproval,
       policyGate: this.policyGate,
       auditLedger: this.auditLedger,
+      targetTransportRedirects: input.targetTransportRedirects,
     });
 
+    const maxRps = signedManifest.manifest.campaign.max_requests_per_second;
+    const paceIfNeeded = async () => {
+      if (maxRps < 12) {
+        await new Promise((resolve) => setTimeout(resolve, Math.ceil(1050 / maxRps)));
+      }
+    };
+
     const externalEvaluations = this.evaluateExternalFindings(input.externalFindings ?? []);
+
+    const baseHypotheses: Array<{
+      id: string;
+      hypothesis: string;
+      category: string;
+      riskTier?: WorkQueueItem['riskTier'];
+    }> = [
+      {
+        id: 'wq-rest-direct',
+        hypothesis:
+          'Check whether direct REST GET /api/documents/doc_ws_a_101 allows cross-workspace read by Bob',
+        category: 'Tenant Isolation (REST)',
+      },
+      {
+        id: 'wq-ws-subscribe',
+        hypothesis:
+          'Verify WebSocket /ws/documents enforces workspace ACL on channel subscribe frames',
+        category: 'Tenant Isolation (WebSocket)',
+      },
+      {
+        id: 'wq-export-diff',
+        hypothesis:
+          'Compare interactive search vs background export workspace scoping and per-document ACL',
+        category: 'Data Flow Differential',
+      },
+    ];
+
+    if (input.includeMutatingProbe) {
+      baseHypotheses.push({
+        id: 'wq-retention-mutating',
+        hypothesis:
+          'Test workspace retention policy preview endpoint under state-mutating boundary (POST /api/workspaces/:id/retention-preview)',
+        category: 'State-Mutating Role Boundary',
+        riskTier: 'TIER_2_STATE_MUTATING',
+      });
+    }
 
     const surfacePlan = await this.modelGateway.completeStructured({
       modelId,
       task: 'surface-map',
-      prompt: `Map multi-tenant verification hypotheses for ${input.targetBaseUrl}`,
-      fallbackValue: {
-        hypotheses: [
-          {
-            id: 'wq-rest-direct',
-            hypothesis: 'Check whether direct REST GET /api/documents/doc_ws_a_101 allows cross-workspace read by Bob',
-            category: 'Tenant Isolation (REST)',
-          },
-          {
-            id: 'wq-ws-subscribe',
-            hypothesis: 'Verify WebSocket /ws/documents enforces workspace ACL on channel subscribe frames',
-            category: 'Tenant Isolation (WebSocket)',
-          },
-          {
-            id: 'wq-export-diff',
-            hypothesis: 'Compare interactive search vs background export workspace scoping and per-document ACL',
-            category: 'Data Flow Differential',
-          },
-        ],
-      },
+      prompt: `Map multi-tenant verification hypotheses for ${targetBaseUrl}`,
+      fallbackValue: { hypotheses: baseHypotheses },
     });
 
     const nowIso = new Date().toISOString();
@@ -335,20 +396,11 @@ export class RedTeamEngine {
         hypothesis: h.hypothesis,
         category: h.category,
         assignedAgent: 'unassigned',
-        riskTier: 'TIER_1_SAFE_PROBE' as const,
+        riskTier: h.riskTier ?? ('TIER_1_SAFE_PROBE' as const),
         status: 'queued' as const,
         updatedAt: nowIso,
       })),
-      [
-        {
-          id: 'sk-principals',
-          kind: 'identity',
-          title: 'Synthetic Staging Principals (Alice & Bob)',
-          detail: `Alice in Workspace A (${input.aliceWorkspaceId ?? 'ws_a'}), Bob in Workspace B (${bobWorkspaceId}).`,
-          discoveredBy: 'surface-mapper',
-          createdAt: nowIso,
-        },
-      ],
+      [],
     );
 
     for (const ext of externalEvaluations) {
@@ -369,21 +421,77 @@ export class RedTeamEngine {
 
     const confirmedFindings: FindingRecord[] = [];
     const evidenceBundles: EvidenceBundle[] = [];
-    const wsBaseUrl = toWsBaseUrl(input.targetBaseUrl);
+    const pendingApprovals: HitlApprovalRequest[] = [];
+    const activitySeries: CampaignActivityPoint[] = [];
+    const wsBaseUrl = toWsBaseUrl(targetBaseUrl);
 
     try {
+      // Surface identity check on /api/me for Alice & Bob
+      const aliceMe = await proxy.proxyHttpRequest({
+        method: 'GET',
+        url: `${targetBaseUrl}/api/me`,
+        headers: { Authorization: `Bearer ${aliceToken}` },
+        actor: 'alice',
+      });
+      await paceIfNeeded();
+      const bobMe = await proxy.proxyHttpRequest({
+        method: 'GET',
+        url: `${targetBaseUrl}/api/me`,
+        headers: { Authorization: `Bearer ${bobToken}` },
+        actor: 'bob',
+      });
+      await paceIfNeeded();
+
+      this.sharedMemory.upsertKnowledge(campaignId, {
+        id: 'sk-principals',
+        kind: 'identity',
+        title: 'Synthetic Staging Principals (Alice & Bob)',
+        detail: `Verified /api/me principals: Alice (HTTP ${aliceMe.statusCode}, ${aliceWorkspaceId}) and Bob (HTTP ${bobMe.statusCode}, ${bobWorkspaceId}).`,
+        sourceRef: 'GET /api/me',
+        discoveredBy: 'surface-mapper',
+      });
+
+      activitySeries.push({
+        timestamp: new Date().toISOString().slice(11, 19),
+        requestsCount: 2,
+        findingConfirmedTick: false,
+      });
+
       let claimed = this.sharedMemory.claimNextHypothesis(campaignId, 'verifier-alpha');
       while (claimed) {
+        if (this.policyGate.isKillSwitchEngaged()) {
+          break;
+        }
+
         if (claimed.id === 'wq-rest-direct') {
           const restRes = await proxy.proxyHttpRequest({
             method: 'GET',
-            url: `${input.targetBaseUrl}/api/documents/doc_ws_a_101`,
+            url: `${targetBaseUrl}/api/documents/doc_ws_a_101`,
             headers: { Authorization: `Bearer ${bobToken}` },
             actor: 'bob',
             workItemId: claimed.id,
           });
+          await paceIfNeeded();
 
-          if (restRes.statusCode === 403 || restRes.statusCode === 401) {
+          const wsDocsRes = await proxy.proxyHttpRequest({
+            method: 'GET',
+            url: `${targetBaseUrl}/api/workspaces/${aliceWorkspaceId}/docs`,
+            headers: { Authorization: `Bearer ${bobToken}` },
+            actor: 'bob',
+            workItemId: claimed.id,
+          });
+          await paceIfNeeded();
+
+          activitySeries.push({
+            timestamp: new Date().toISOString().slice(11, 19),
+            requestsCount: 2,
+            findingConfirmedTick: false,
+          });
+
+          if (
+            (restRes.statusCode === 403 || restRes.statusCode === 401) &&
+            (wsDocsRes.statusCode === 403 || wsDocsRes.statusCode === 401 || wsDocsRes.statusCode === 404)
+          ) {
             this.sharedMemory.completeHypothesis(
               campaignId,
               claimed.id,
@@ -401,10 +509,11 @@ export class RedTeamEngine {
         } else if (claimed.id === 'wq-ws-subscribe') {
           const controlRest = await proxy.proxyHttpRequest({
             method: 'GET',
-            url: `${input.targetBaseUrl}/api/documents/doc_ws_a_101`,
+            url: `${targetBaseUrl}/api/documents/doc_ws_a_101`,
             actor: 'anonymous',
             workItemId: claimed.id,
           });
+          await paceIfNeeded();
 
           const wsProbe = await proxy.proxyWebSocketOperation({
             url: `${wsBaseUrl}/ws/documents`,
@@ -414,6 +523,7 @@ export class RedTeamEngine {
             actor: 'anonymous',
             workItemId: claimed.id,
           });
+          await paceIfNeeded();
 
           const parsedFrame = wsProbe.responseFrame
             ? (JSON.parse(wsProbe.responseFrame) as {
@@ -423,12 +533,12 @@ export class RedTeamEngine {
               })
             : null;
 
+          let wsConfirmed = false;
           if (
             controlRest.statusCode === 401 &&
             parsedFrame?.type === 'doc.snapshot' &&
             parsedFrame.marker
           ) {
-            // Clean-room replay assertion inside isolated DisposableSandboxRuntime
             await this.sandboxRuntime.writeSandboxFile(
               sandbox.id,
               'verify_ws_trace.mjs',
@@ -446,6 +556,7 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
             ]);
 
             if (replayExec.exitCode === 0) {
+              wsConfirmed = true;
               const findingId = 'F-001';
               const evidenceId = 'EV-F001-LIVE';
               const verifiedIso = new Date().toISOString();
@@ -462,7 +573,7 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
                 httpTraces: [
                   {
                     method: 'GET',
-                    url: `${input.targetBaseUrl}/api/documents/doc_ws_a_101`,
+                    url: `${targetBaseUrl}/api/documents/doc_ws_a_101`,
                     actor: 'anonymous',
                     requestHeaders: {},
                     statusCode: controlRest.statusCode,
@@ -479,9 +590,9 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
                 ],
                 codePath: [
                   {
-                    file: 'realtime/ws_documents.py',
-                    startLine: 44,
-                    endLine: 73,
+                    file: 'routes/collab.py',
+                    startLine: 18,
+                    endLine: 41,
                     snippet: 'on_subscribe upgrades channel without workspace ACL re-check',
                   },
                 ],
@@ -492,9 +603,9 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
               const finding = FindingRecordSchema.parse({
                 id: findingId,
                 title: 'A signed-out visitor can read a private document over WebSocket',
-                subtitle: `northstar-docs · ${findingId} · Confirmed in isolated local testbed`,
+                subtitle: `northstar-docs · ${findingId} · Confirmed in isolated local staging`,
                 repository: 'northstar-docs',
-                observedRevision: 'e81a442',
+                observedRevision,
                 severity: 'high',
                 status: 'triaged',
                 fixVerification: 'not_recorded',
@@ -511,7 +622,7 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
                 remediation:
                   'Verify caller workspace read permission on every WebSocket subscribe frame.',
                 affectedEndpoint: 'GET /ws/documents',
-                codeReferences: [{ file: 'realtime/ws_documents.py', startLine: 44, endLine: 73 }],
+                codeReferences: [{ file: 'routes/collab.py', startLine: 18, endLine: 41 }],
                 rootCauseClusterKey: 'northstar-docs:ws-subscribe-acl',
                 campaignId,
                 evidenceBundleId: evidenceId,
@@ -543,10 +654,16 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
               'WebSocket subscribe properly enforced workspace ACL.',
             );
           }
+
+          activitySeries.push({
+            timestamp: new Date().toISOString().slice(11, 19),
+            requestsCount: 2,
+            findingConfirmedTick: wsConfirmed,
+          });
         } else if (claimed.id === 'wq-export-diff') {
           const interactiveSearch = await proxy.proxyHttpRequest({
             method: 'POST',
-            url: `${input.targetBaseUrl}/api/workspaces/${bobWorkspaceId}/search`,
+            url: `${targetBaseUrl}/api/workspaces/${bobWorkspaceId}/search`,
             headers: {
               Authorization: `Bearer ${bobToken}`,
               'Content-Type': 'application/json',
@@ -555,10 +672,11 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
             actor: 'bob',
             workItemId: claimed.id,
           });
+          await paceIfNeeded();
 
           const createSaved = await proxy.proxyHttpRequest({
             method: 'POST',
-            url: `${input.targetBaseUrl}/api/workspaces/${bobWorkspaceId}/saved-searches`,
+            url: `${targetBaseUrl}/api/workspaces/${bobWorkspaceId}/saved-searches`,
             headers: {
               Authorization: `Bearer ${bobToken}`,
               'Content-Type': 'application/json',
@@ -567,11 +685,14 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
             actor: 'bob',
             workItemId: claimed.id,
           });
+          await paceIfNeeded();
 
-          const savedPayload = JSON.parse(createSaved.body) as { savedSearchId?: string };
+          const savedPayload = createSaved.allowed
+            ? (JSON.parse(createSaved.body) as { savedSearchId?: string })
+            : {};
           const exportRes = await proxy.proxyHttpRequest({
             method: 'POST',
-            url: `${input.targetBaseUrl}/api/workspaces/${bobWorkspaceId}/exports`,
+            url: `${targetBaseUrl}/api/workspaces/${bobWorkspaceId}/exports`,
             headers: {
               Authorization: `Bearer ${bobToken}`,
               'Content-Type': 'application/json',
@@ -580,18 +701,22 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
             actor: 'bob',
             workItemId: claimed.id,
           });
+          await paceIfNeeded();
 
-          const searchData = JSON.parse(interactiveSearch.body) as {
-            results?: Array<{ id: string }>;
-          };
-          const exportData = JSON.parse(exportRes.body) as {
-            archiveEntries?: Array<{ docId: string; text: string; sha256: string }>;
-          };
+          const searchData = interactiveSearch.allowed
+            ? (JSON.parse(interactiveSearch.body) as { results?: Array<{ id: string }> })
+            : {};
+          const exportData = exportRes.allowed
+            ? (JSON.parse(exportRes.body) as {
+                archiveEntries?: Array<{ docId: string; text: string; sha256: string }>;
+              })
+            : {};
 
           const leakedEntry = (exportData.archiveEntries ?? []).find((entry) =>
-            entry.text.includes('NS-7b64c9e2'),
+            entry.text.includes(STAGING_WS_A_CANARY),
           );
 
+          let exportConfirmed = false;
           if ((searchData.results ?? []).length === 0 && leakedEntry) {
             await this.sandboxRuntime.writeSandboxFile(
               sandbox.id,
@@ -600,7 +725,7 @@ console.log('CLEAN_ROOM_WS_CONFIRMED:' + frame.marker);
 const searchCount = ${(searchData.results ?? []).length};
 const entryText = ${JSON.stringify(leakedEntry.text)};
 assert.equal(searchCount, 0);
-assert.equal(entryText.includes('NS-7b64c9e2'), true);
+assert.equal(entryText.includes(${JSON.stringify(STAGING_WS_A_CANARY)}), true);
 console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
 `,
             );
@@ -609,6 +734,7 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
             ]);
 
             if (replayExec.exitCode === 0) {
+              exportConfirmed = true;
               const findingId = 'F-002';
               const evidenceId = 'EV-F002-LIVE';
               const verifiedIso = new Date().toISOString();
@@ -619,13 +745,13 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
                 campaignId,
                 verifiedAt: verifiedIso,
                 reproducible: true,
-                canaryMarker: 'NS-7b64c9e2',
+                canaryMarker: STAGING_WS_A_CANARY,
                 summary:
                   'Clean-room verification confirmed saved-search background export returned Workspace A synthetic canary document NS-7b64c9e2 to Bob (Workspace B) while interactive search returned 0 rows.',
                 httpTraces: [
                   {
                     method: 'POST',
-                    url: `${input.targetBaseUrl}/api/workspaces/${bobWorkspaceId}/search`,
+                    url: `${targetBaseUrl}/api/workspaces/${bobWorkspaceId}/search`,
                     actor: 'bob',
                     requestHeaders: { Authorization: 'Bearer <redacted-bob-token>' },
                     requestBody: JSON.stringify({ titleContains: 'Checklist' }),
@@ -634,7 +760,7 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
                   },
                   {
                     method: 'POST',
-                    url: `${input.targetBaseUrl}/api/workspaces/${bobWorkspaceId}/exports`,
+                    url: `${targetBaseUrl}/api/workspaces/${bobWorkspaceId}/exports`,
                     actor: 'bob',
                     requestHeaders: { Authorization: 'Bearer <redacted-bob-token>' },
                     requestBody: JSON.stringify({ savedSearchId: savedPayload.savedSearchId }),
@@ -644,10 +770,11 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
                 ],
                 codePath: [
                   {
-                    file: 'search_exports.py',
-                    startLine: 59,
-                    endLine: 86,
-                    snippet: 'Background export omits workspace parameter binding and per-row ACL check',
+                    file: 'northstar_docs/Export/search_exports.py',
+                    startLine: 52,
+                    endLine: 79,
+                    snippet:
+                      'Background export interpolates title_contains and omits per-row can_read_document check',
                   },
                 ],
                 controlAssertion: 'Interactive search returned 0 cross-workspace rows for Bob.',
@@ -663,7 +790,7 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
                 title: "Background saved-search export discloses another workspace's private documents",
                 subtitle: `northstar-docs · ${findingId} · Confirmed reproduction`,
                 repository: 'northstar-docs',
-                observedRevision: 'e81a442',
+                observedRevision,
                 severity: 'high',
                 status: 'triaged',
                 fixVerification: 'not_recorded',
@@ -673,14 +800,20 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
                 summary:
                   'Background saved-search export omits workspace filter binding and per-document read checks enforced by interactive search.',
                 rootCause:
-                  'Export worker selects matching titles without binding workspace scope or calling can_read_document.',
+                  'Export worker interpolates title_contains without binding workspace scope or calling can_read_document.',
                 impactAndAttackPath:
                   'A user in Workspace B can export documents belonging to Workspace A.',
                 preconditions: ['Caller holds standard account in Workspace B.'],
                 remediation:
                   'Bind workspace and filter parameters and enforce caller document-read permission before writing archive entries.',
                 affectedEndpoint: `/api/workspaces/${bobWorkspaceId}/exports`,
-                codeReferences: [{ file: 'search_exports.py', startLine: 59, endLine: 86 }],
+                codeReferences: [
+                  {
+                    file: 'northstar_docs/Export/search_exports.py',
+                    startLine: 52,
+                    endLine: 79,
+                  },
+                ],
                 rootCauseClusterKey: 'northstar-docs:saved-search-export-query',
                 campaignId,
                 evidenceBundleId: evidenceId,
@@ -690,11 +823,19 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
 
               evidenceBundles.push(evidence);
               confirmedFindings.push(finding);
+              this.sharedMemory.upsertKnowledge(campaignId, {
+                kind: 'data_flow',
+                title: 'Divergent Saved-Search Execution Paths (search_exports.py)',
+                detail:
+                  'Interactive search binds filter parameters and checks can_read_document; background export omits both controls.',
+                sourceRef: 'northstar_docs/Export/search_exports.py:52-79',
+                discoveredBy: 'verifier-beta',
+              });
               this.sharedMemory.completeHypothesis(
                 campaignId,
                 claimed.id,
                 'confirmed',
-                `Confirmed ${findingId} via benign marker NS-7b64c9e2`,
+                `Confirmed ${findingId} via benign marker ${STAGING_WS_A_CANARY}`,
               );
             } else {
               this.sharedMemory.completeHypothesis(
@@ -712,6 +853,63 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
               'Background export properly enforced workspace scoping and per-document ACL.',
             );
           }
+
+          activitySeries.push({
+            timestamp: new Date().toISOString().slice(11, 19),
+            requestsCount: 3,
+            findingConfirmedTick: exportConfirmed,
+          });
+        } else if (claimed.id === 'wq-retention-mutating') {
+          const mutatingRes = await proxy.proxyHttpRequest({
+            method: 'POST',
+            url: `${targetBaseUrl}/api/workspaces/${bobWorkspaceId}/retention-preview`,
+            headers: {
+              Authorization: `Bearer ${bobToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ dryRun: true }),
+            actor: 'bob',
+            workItemId: claimed.id,
+            mutatesState: true,
+          });
+          await paceIfNeeded();
+
+          if (mutatingRes.statusCode === 428 && mutatingRes.pendingApproval) {
+            pendingApprovals.push(mutatingRes.pendingApproval);
+            this.sharedMemory.completeHypothesis(
+              campaignId,
+              claimed.id,
+              'awaiting_approval',
+              `Paused by Ask-for-Approval policy gate (${mutatingRes.pendingApproval.id}) awaiting human operator review.`,
+            );
+          } else if (mutatingRes.allowed && mutatingRes.statusCode === 200) {
+            this.sharedMemory.completeHypothesis(
+              campaignId,
+              claimed.id,
+              'falsified',
+              'Retention preview enforced caller workspace scoping cleanly (HTTP 200 previewOnly).',
+            );
+          } else {
+            this.sharedMemory.completeHypothesis(
+              campaignId,
+              claimed.id,
+              'falsified',
+              `Blocked at egress boundary (HTTP ${mutatingRes.statusCode}).`,
+            );
+          }
+
+          activitySeries.push({
+            timestamp: new Date().toISOString().slice(11, 19),
+            requestsCount: 1,
+            findingConfirmedTick: false,
+          });
+        } else {
+          this.sharedMemory.completeHypothesis(
+            campaignId,
+            claimed.id,
+            'falsified',
+            'Evaluated within staging boundary with no cross-tenant discrepancy.',
+          );
         }
 
         claimed = this.sharedMemory.claimNextHypothesis(campaignId, 'verifier-beta');
@@ -744,9 +942,15 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
       endpointHits: proxy.getEndpointHits(),
       workQueue: this.sharedMemory.listWorkQueue(campaignId),
       sharedKnowledge: this.sharedMemory.listKnowledge(campaignId),
+      pendingApprovals,
+      activitySeries,
       teardownAttestation,
       withinApprovedScope: this.auditLedger.getSafetyMonitorStatus().withinApprovedScope,
     };
+  }
+
+  async runAssessmentAgainstTestbed(input: RunAssessmentInput): Promise<AssessmentRunResult> {
+    return this.runAssessment(input);
   }
 
   async verifyFixClosure(input: VerifyFixClosureInput): Promise<VerifyFixClosureResult> {
@@ -772,18 +976,18 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
 
     try {
       if (input.targetBaseUrl) {
-        const aliceToken = input.aliceToken ?? 'tok-alice-ws-a';
-        const bobToken = input.bobToken ?? 'tok-bob-ws-b';
-        const aliceWorkspaceId = input.aliceWorkspaceId ?? 'ws_a';
-        const bobWorkspaceId =
-          input.bobWorkspaceId ?? '90b2e16a-70d2-4c1d-b8e5-5f34609f8a2c';
+        const targetBaseUrl = stripTrailingSlash(input.targetBaseUrl);
+        const aliceToken = input.aliceToken ?? STAGING_ALICE_TOKEN;
+        const bobToken = input.bobToken ?? STAGING_BOB_TOKEN;
+        const aliceWorkspaceId = input.aliceWorkspaceId ?? STAGING_ALICE_WORKSPACE_ID;
+        const bobWorkspaceId = input.bobWorkspaceId ?? STAGING_BOB_WORKSPACE_ID;
 
         const keyPair = generateScopeKeyPair(`reverify-${input.finding.id}`);
         const manifest: CampaignYamlV5 = {
           objective: `Targeted post-patch re-verification for ${input.finding.id}`,
           campaign: {
             name: `reverify-${input.finding.id.toLowerCase()}`,
-            targets: [input.targetBaseUrl],
+            targets: [targetBaseUrl],
             source: { repository: input.finding.repository },
             max_duration: '10m',
             max_requests_per_second: 50,
@@ -815,8 +1019,13 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
           input.finding.rootCauseClusterKey.includes('ws-subscribe') ||
           (input.finding.affectedEndpoint ?? '').includes('/ws/documents');
 
+        const isSavedSearchExportFinding =
+          input.finding.id === 'F-002' ||
+          input.finding.rootCauseClusterKey.includes('saved-search-export') ||
+          (input.finding.affectedEndpoint ?? '').includes('/exports');
+
         if (isWebSocketFinding) {
-          const wsBaseUrl = toWsBaseUrl(input.targetBaseUrl);
+          const wsBaseUrl = toWsBaseUrl(targetBaseUrl);
           const anonSub = await proxy.proxyWebSocketOperation({
             url: `${wsBaseUrl}/ws/documents`,
             origin: '*',
@@ -853,11 +1062,10 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
           securityProbeBlocked = anonFrame.code === 'FORBIDDEN' && !anonFrame.marker;
           normalBehaviorPreserved =
             tplFrame.type === 'doc.snapshot' && aliceFrame.type === 'doc.snapshot';
-        } else {
-          // Saved-search export closure check (Bob blocked from cross-workspace doc; Alice still exports own doc)
+        } else if (isSavedSearchExportFinding) {
           const bobSaved = await proxy.proxyHttpRequest({
             method: 'POST',
-            url: `${input.targetBaseUrl}/api/workspaces/${bobWorkspaceId}/saved-searches`,
+            url: `${targetBaseUrl}/api/workspaces/${bobWorkspaceId}/saved-searches`,
             headers: {
               Authorization: `Bearer ${bobToken}`,
               'Content-Type': 'application/json',
@@ -870,7 +1078,7 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
 
           const bobExport = await proxy.proxyHttpRequest({
             method: 'POST',
-            url: `${input.targetBaseUrl}/api/workspaces/${bobWorkspaceId}/exports`,
+            url: `${targetBaseUrl}/api/workspaces/${bobWorkspaceId}/exports`,
             headers: {
               Authorization: `Bearer ${bobToken}`,
               'Content-Type': 'application/json',
@@ -887,7 +1095,7 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
 
           const aliceSaved = await proxy.proxyHttpRequest({
             method: 'POST',
-            url: `${input.targetBaseUrl}/api/workspaces/${aliceWorkspaceId}/saved-searches`,
+            url: `${targetBaseUrl}/api/workspaces/${aliceWorkspaceId}/saved-searches`,
             headers: {
               Authorization: `Bearer ${aliceToken}`,
               'Content-Type': 'application/json',
@@ -900,7 +1108,7 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
 
           const aliceExport = await proxy.proxyHttpRequest({
             method: 'POST',
-            url: `${input.targetBaseUrl}/api/workspaces/${aliceWorkspaceId}/exports`,
+            url: `${targetBaseUrl}/api/workspaces/${aliceWorkspaceId}/exports`,
             headers: {
               Authorization: `Bearer ${aliceToken}`,
               'Content-Type': 'application/json',
@@ -915,9 +1123,58 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
               }
             ).archiveEntries ?? [];
 
-          securityProbeBlocked = !bobEntries.some((e) => e.text.includes('NS-7b64c9e2'));
-          normalBehaviorPreserved = aliceEntries.some((e) => e.text.includes('NS-7b64c9e2'));
+          securityProbeBlocked = !bobEntries.some((e) => e.text.includes(STAGING_WS_A_CANARY));
+          normalBehaviorPreserved = aliceEntries.some((e) => e.text.includes(STAGING_WS_A_CANARY));
         }
+      }
+
+      const isPythonFix =
+        input.fix.sandboxBackend === 'microsoft-litebox' ||
+        input.finding.codeReferences.some((ref) => ref.file.endsWith('.py'));
+
+      if (isPythonFix) {
+        await this.sandboxRuntime.writeSandboxFile(
+          sandbox.id,
+          'closure_check.py',
+          `assert ${securityProbeBlocked ? 'True' : 'False'}, 'Security probe must be blocked post-patch'\n` +
+            `assert ${normalBehaviorPreserved ? 'True' : 'False'}, 'Normal authorized behavior must remain intact'\n` +
+            `assert ${structuralDiffValid ? 'True' : 'False'}, 'Structural diff check must pass'\n`,
+        );
+        const checkRes = await this.sandboxRuntime.execInSandbox(sandbox.id, 'python3', [
+          'closure_check.py',
+        ]);
+        const verified = checkRes.exitCode === 0;
+        const status: FixVerificationStatus = verified ? 'verified' : 'regression_detected';
+        const teardownAttestation = await this.sandboxRuntime.destroySandbox(sandbox.id);
+
+        const summary = verified
+          ? `Targeted re-verification confirmed ${input.finding.id} is closed inside ${teardownAttestation.backend} and authorized workflows remain healthy.`
+          : `Post-patch verification detected incomplete closure or behavioral regression for ${input.finding.id}.`;
+
+        this.auditLedger.append({
+          subsystem: 'red-team',
+          action: verified ? 'fix.closure.verified' : 'fix.closure.regression',
+          entityId: input.finding.id,
+          actor: 'nightfall-red-team',
+          summary,
+          metadata: {
+            fixId: input.fix.id,
+            sandboxBackend: teardownAttestation.backend,
+            securityProbeBlocked,
+            normalBehaviorPreserved,
+            structuralDiffValid,
+          },
+        });
+
+        return {
+          verified,
+          status,
+          securityProbeBlocked,
+          normalBehaviorPreserved,
+          structuralDiffValid,
+          summary,
+          teardownAttestation,
+        };
       }
 
       await this.sandboxRuntime.writeSandboxFile(

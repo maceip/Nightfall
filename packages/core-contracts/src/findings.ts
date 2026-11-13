@@ -163,6 +163,9 @@ export const FixProposalSchema = z.object({
   conversation: z.array(FixConversationMessageSchema).default([]),
   prUrl: z.string().optional(),
   prNumber: z.number().int().optional(),
+  branchName: z.string().optional(),
+  commitSha: z.string().optional(),
+  sandboxBackend: z.enum(['microsoft-litebox', 'process-confined']).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

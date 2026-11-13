@@ -1,0 +1,43 @@
+# Stage 1: Compile Microsoft LiteBox (https://github.com/microsoft/litebox) Rust Library OS
+FROM rust:1-bookworm AS litebox-builder
+
+ARG LITEBOX_COMMIT=cd8de54b09667c78f6a4ce1f4b0d6a15f7c97fcb
+WORKDIR /src/litebox
+
+RUN git init . \
+  && git remote add origin https://github.com/microsoft/litebox.git \
+  && git fetch --depth 1 origin "${LITEBOX_COMMIT}" \
+  && git checkout --detach "${LITEBOX_COMMIT}" \
+  && cargo build --release \
+      -p litebox_runner_linux_userland \
+      -p litebox_packager \
+      -p litebox_syscall_rewriter
+
+# Stage 2: Nightfall Runtime Image with Microsoft LiteBox Toolchain
+FROM node:24-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    python3 \
+  && rm -rf /var/lib/apt/lists/* \
+  && groupadd -r nightfall && useradd -r -g nightfall -m -d /sandbox nightfall \
+  && mkdir -p /opt/nightfall/litebox/bin /opt/nightfall/litebox/share
+
+COPY --from=litebox-builder /src/litebox/target/release/litebox_runner_linux_userland /opt/nightfall/litebox/bin/
+COPY --from=litebox-builder /src/litebox/target/release/litebox_packager /opt/nightfall/litebox/bin/
+COPY --from=litebox-builder /src/litebox/target/release/litebox_syscall_rewriter /opt/nightfall/litebox/bin/
+
+RUN python3 -c 'import os, sysconfig, zipfile; std=sysconfig.get_path("stdlib"); z=zipfile.ZipFile("/opt/nightfall/litebox/share/python311.zip","w"); [z.write(os.path.join(r,f), os.path.relpath(os.path.join(r,f), std)) for r,_,fs in os.walk(std) if "test" not in r and "__pycache__" not in r for f in fs if f.endswith(".py")]; z.close()' \
+  && find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
+
+USER nightfall
+WORKDIR /sandbox
+
+ENV NODE_ENV=production \
+    HOME=/sandbox \
+    TMPDIR=/tmp \
+    NIGHTFALL_LITEBOX_BIN_DIR=/opt/nightfall/litebox/bin \
+    NIGHTFALL_LITEBOX_PYTHON_STDLIB_ZIP=/opt/nightfall/litebox/share/python311.zip
+
+CMD ["/opt/nightfall/litebox/bin/litebox_runner_linux_userland", "--help"]
