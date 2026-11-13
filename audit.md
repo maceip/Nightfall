@@ -389,6 +389,41 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 - Required change: back the queue/knowledge/leases with a shared, durable store (DB or queue service)
   if multi-worker or HA operation is intended, or scope the "shared control plane" claim to single-process.
 
+### 4.14 — S1 — Scan endpoint accepts arbitrary server paths and clone URLs
+- Evidence: `triggerScan` forwards caller-supplied `localPath` and `cloneUrl` unchanged
+  (`services/closed-loop-orchestrator/src/index.ts:749-759`); `RepositoryScanner.scanRepository` then
+  walks any readable server-side directory or runs `git clone` against any endpoint
+  (`services/defense-factory/src/repositoryScanner.ts:653-673`). With the API unauthenticated (4.5), a
+  caller can read source from arbitrary filesystem trees via findings, or induce outbound Git
+  connections to internal hosts.
+- Required change: restrict local paths to an approved workspace root or a user-selected desktop
+  handle, validate clone schemes/hosts against connected repositories, and never accept inline
+  credentials — in addition to endpoint authorization.
+
+### 4.15 — S1 — Electron navigation guard uses string-prefix matching
+- Evidence: `will-navigate` allows any URL that `startsWith` the dev origin or `file://`
+  (`apps/nightfall-ui/electron/main.ts:341-343`). `http://localhost:5173@attacker.example/` passes the
+  prefix test, and any local HTML file is accepted; such content loads in the privileged window with
+  the preload bridge and the embedded API.
+- Required change: compare the parsed origin exactly in development and the exact packaged renderer
+  path in production; validate IPC senders.
+
+### 4.16 — S1 — Custom-CA trust bypasses hostname and validity checks
+- Evidence: when a custom CA is configured, the verifier accepts any connection Chromium rejected if
+  any certificate in the chain matches a configured fingerprint, without checking why it was rejected
+  (`apps/nightfall-ui/electron/network-policy.ts:107-119`). A certificate from that CA for a different
+  hostname, or an expired one, is accepted.
+- Required change: add the CA as a trust anchor only; keep hostname, validity-period and chain
+  verification, accepting solely the unknown-authority error.
+
+### 4.17 — S2 — Live UI state misses new approvals and repositories
+- Evidence: the SSE handler only updates approvals already in state and never inserts a new one
+  (`apps/nightfall-ui/src/hooks/use-nightfall-workspace.ts:59-63`), so a campaign that pauses for
+  approval shows no Approve/Reject card until reload. `triggerScan` returns no repository list and
+  emits no repository event (`services/closed-loop-orchestrator/src/index.ts:871-875`), so a newly
+  scanned local repository does not appear until reload.
+- Required change: upsert unknown approvals from SSE; return or emit repository updates after scans.
+
 ---
 
 ## 5. Enterprise legitimacy and trust (what is required beyond "nothing faked")
@@ -819,9 +854,10 @@ For fairness and to scope the work, these subsystems execute real logic and shou
 - CLI: real `validate` / `sign` / `status` / `verify-audit` (`apps/nightfall-cli/src/index.ts`).
 - Electron shell hardening: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`,
   `webSecurity: true` are genuinely set (`apps/nightfall-ui/electron/main.ts:284-287`), and the desktop
-  proxy + custom-CA pinning (`electron/network-policy.ts`) is real code. (Caveat: egress defaults to
+  proxy + custom-CA code (`electron/network-policy.ts`) is real. Caveats: the navigation guard and
+  custom-CA verifier have real defects (4.15, 4.16), and egress defaults to
   `direct` with no restriction unless a proxy is configured, so the "zero-egress" posture is
-  deployment-specific, not a desktop default.)
+  deployment-specific, not a desktop default.
 - Repository scanner reach: `triggerScan`/`scanRepository` genuinely accept `cloneUrl`/`localPath` and
   run the real SAST over real files — the limitation is UI-only (GAP-35), not the engine.
 
