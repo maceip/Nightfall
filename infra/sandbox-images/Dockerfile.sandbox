@@ -1,0 +1,19 @@
+# Hardened Disposable Sandbox Image for Nightfall Red Team & Defense Factory
+FROM node:24-bookworm-slim
+
+# Create unprivileged sandbox execution user
+RUN groupadd -r nightfall && useradd -r -g nightfall -m -d /sandbox nightfall
+
+WORKDIR /sandbox
+
+# Drop setuid/setgid bits across rootfs to harden ephemeral runtime
+RUN find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
+
+USER nightfall
+
+ENV NODE_ENV=production \
+    HOME=/sandbox \
+    TMPDIR=/tmp
+
+# Default read-only entrypoint awaiting orchestrator command injection
+CMD ["node", "-e", "console.log('Nightfall disposable sandbox ready')"]

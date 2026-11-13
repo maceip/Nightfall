@@ -1,0 +1,47 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@nightfall/core-contracts": [
+        "../../packages/core-contracts/src/index.ts"
+      ],
+      "@nightfall/mock-fixtures": [
+        "../../packages/mock-fixtures/src/index.ts"
+      ],
+      "@nightfall/sandbox-runtime": [
+        "../../packages/sandbox-runtime/src/index.ts"
+      ],
+      "@nightfall/policy-gate": [
+        "../../packages/policy-gate/src/index.ts"
+      ],
+      "@nightfall/shared-memory": [
+        "../../packages/shared-memory/src/index.ts"
+      ],
+      "@nightfall/audit-ledger": [
+        "../../packages/audit-ledger/src/index.ts"
+      ],
+      "@nightfall/model-gateway": [
+        "../../packages/model-gateway/src/index.ts"
+      ],
+      "@nightfall/ui-kit": [
+        "../../packages/ui-kit/src/index.ts"
+      ],
+      "@nightfall/red-team": [
+        "../../services/red-team/src/index.ts"
+      ],
+      "@nightfall/defense-factory": [
+        "../../services/defense-factory/src/index.ts"
+      ],
+      "@nightfall/closed-loop-orchestrator": [
+        "../../services/closed-loop-orchestrator/src/index.ts"
+      ],
+      "@nightfall/api-gateway": [
+        "../../services/api-gateway/src/index.ts"
+      ]
+    },
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*"
+  ]
+}

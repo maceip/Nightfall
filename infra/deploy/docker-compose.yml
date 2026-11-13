@@ -1,0 +1,55 @@
+# Nightfall Local Full-Stack & Network-Isolated Sandbox Topology
+services:
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: infra/sandbox-images/Dockerfile.sandbox
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace
+    command: ["npx", "tsx", "services/api-gateway/src/server.ts"]
+    ports:
+      - "4000:4000"
+    networks:
+      - control_plane_net
+
+  nightfall-ui:
+    build:
+      context: ../..
+      dockerfile: infra/sandbox-images/Dockerfile.sandbox
+    working_dir: /workspace/apps/nightfall-ui
+    volumes:
+      - ../..:/workspace
+    environment:
+      - NIGHTFALL_API_TARGET=http://api-gateway:4000
+    command: ["npx", "vite", "--host", "0.0.0.0", "--port", "5173"]
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api-gateway
+    networks:
+      - control_plane_net
+
+  # Isolated verification sandbox network (internal: true blocks all direct internet egress;
+  # outbound requests must traverse the Nightfall L7 HTTP + WebSocket Egress Policy Proxy).
+  red-team-sandbox-template:
+    build:
+      context: ../..
+      dockerfile: infra/sandbox-images/Dockerfile.sandbox
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+      - /sandbox:size=128m,nosuid
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - isolated_sandbox_net
+
+networks:
+  control_plane_net:
+    driver: bridge
+  isolated_sandbox_net:
+    driver: bridge
+    internal: true

@@ -1,0 +1,36 @@
+{
+  "name": "nightfall-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nightfall — Unified Closed-Loop Red Team Assessment & Defense Factory Remediation Platform",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maceip/Nightfall.git"
+  },
+  "packageManager": "pnpm@12.18.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev:api": "pnpm --filter @nightfall/api-gateway dev",
+    "dev:web": "pnpm --filter @nightfall/nightfall-ui dev:web",
+    "dev:desktop": "pnpm --filter @nightfall/nightfall-ui dev:desktop",
+    "build": "pnpm -r --filter './packages/*' --filter './services/*' --filter './apps/*' build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "pnpm --filter @nightfall/nightfall-cli start"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@types/ws": "^8.18.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^26.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.7"
+  }
+}

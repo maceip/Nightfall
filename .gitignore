@@ -1,0 +1,11 @@
+node_modules/
+dist/
+build/
+out/
+release/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+coverage/
+.tmp-sandboxes/

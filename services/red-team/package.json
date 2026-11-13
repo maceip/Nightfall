@@ -1,0 +1,23 @@
+{
+  "name": "@nightfall/red-team",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nightfall/core-contracts": "workspace:*",
+    "@nightfall/sandbox-runtime": "workspace:*",
+    "@nightfall/policy-gate": "workspace:*",
+    "@nightfall/shared-memory": "workspace:*",
+    "@nightfall/audit-ledger": "workspace:*",
+    "@nightfall/model-gateway": "workspace:*",
+    "ws": "^8.18.1",
+    "yaml": "^2.7.0"
+  }
+}

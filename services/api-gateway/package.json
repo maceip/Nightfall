@@ -1,0 +1,26 @@
+{
+  "name": "@nightfall/api-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@nightfall/core-contracts": "workspace:*",
+    "@nightfall/mock-fixtures": "workspace:*",
+    "@nightfall/policy-gate": "workspace:*",
+    "@nightfall/shared-memory": "workspace:*",
+    "@nightfall/audit-ledger": "workspace:*",
+    "@nightfall/model-gateway": "workspace:*",
+    "@nightfall/red-team": "workspace:*",
+    "@nightfall/defense-factory": "workspace:*",
+    "@nightfall/closed-loop-orchestrator": "workspace:*"
+  }
+}
