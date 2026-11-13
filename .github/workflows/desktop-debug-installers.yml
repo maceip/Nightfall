@@ -86,6 +86,21 @@ jobs:
           test -x "$HOME/.local/share/nightfall/litebox/bin/litebox_packager"
           test -x "$HOME/.local/share/nightfall/litebox/bin/litebox_syscall_rewriter"
 
+      - name: LiteBox smoke diagnostics (non-blocking)
+        continue-on-error: true
+        run: |
+          BIN="$HOME/.local/share/nightfall/litebox/bin"
+          head -4 /etc/os-release; uname -r; ldd --version | head -1
+          CAT="$(readlink -f /usr/bin/cat)"; ls -l /usr/bin/cat "$CAT"; file "$CAT" || true
+          W="$(mktemp -d)"; printf 'litebox-smoke' > "$W/canary.txt"
+          "$BIN/litebox_packager" /usr/bin/cat --include "$W/canary.txt:/sandbox/canary.txt" -o "$W/b.tar"
+          set +e
+          "$BIN/litebox_runner_linux_userland" --unstable \
+            --env LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib64:/lib32:/lib \
+            --env HOME=/sandbox --env TMPDIR=/tmp --env LANG=C.UTF-8 \
+            --initial-files "$W/b.tar" --program-from-tar /usr/bin/cat /sandbox/canary.txt
+          echo "litebox cat exit=$?"
+
       - name: Typecheck entire monorepo
         run: pnpm typecheck
 
