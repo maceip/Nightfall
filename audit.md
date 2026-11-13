@@ -432,7 +432,83 @@ requires). Severity reuses the legend above.
   (OWASP Benchmark, real CVEs). Real-state: a reproducible efficacy suite over real datasets with
   published detection-rate / false-positive numbers.
 
-### 6.K — Confirmed real at this commit (NOT part of the gap — keep)
+### 6.K — Best-in-class real alternatives (by fakery area)
+
+Best-effort, concrete "build-this-instead" guidance. Named tools/standards are representative of the
+class, not endorsements; choose per language and deployment model.
+
+**For 6.A (scenario & data) — make the subject-under-analysis entirely user-supplied.** Ingest
+repositories through a real VCS integration (a GitHub/GitLab/Bitbucket App with per-install,
+short-lived tokens), clone to an ephemeral workspace, and also support local-path and uploaded-archive
+sources. Drive dynamic testing against the user's own staging or an ephemeral preview environment of
+their app (spun from their compose/Helm/preview-env tooling) registered with explicit, authenticated
+scope. Keep every sample/vulnerable app out of the runtime and confine it to the benchmark harness
+(6.J).
+
+**For 6.B (detection) — emit findings from real detectors that carry evidence.**
+- Static: AST/dataflow engines — CodeQL, Semgrep (taint mode), language taint tools (Pysa/Pyre for
+  Python, CodeQL for JS/TS/Java/Go). Merge third-party results via SARIF.
+- Dynamic BOLA/IDOR/broken-object-authorization (exactly what `F-001`/`F-002` are): differential
+  authorization testing — drive the target with two or more authenticated identities across tenants
+  and diff the responses (the Autorize / OWASP ZAP access-control methodology), seeded from an
+  OpenAPI/GraphQL schema, a HAR capture, or a crawl, and confirmed by an idempotent, non-destructive
+  replay.
+- Surface mapping: real discovery — crawler + OpenAPI/Swagger + GraphQL introspection + route
+  extraction (tree-sitter/Semgrep) producing an attack-surface model. Use ULID/UUIDv7 for IDs and the
+  scanner's real `git rev-parse HEAD` for the revision.
+
+**For 6.C (model/LLM) — put a real model behind the gateway, as planner not oracle.** Use a capable
+frontier model with structured outputs/function-calling and RAG over the repository for grounding;
+have it orchestrate the deterministic tools (scanner, proxy, fuzzer) while the sandbox proof — never
+the model — renders the final verdict. Validate every model output against the zod schemas. Offer a
+self-hosted/on-prem model path (vLLM, Ollama, or a licensed on-prem deployment) for air-gapped buyers.
+Govern providers with the operator allowlist in §3; store keys in a real secret manager (Vault, cloud
+secret managers, or Electron `safeStorage` on desktop).
+
+**For 6.D (patch synthesis) — real automated program repair grounded in the actual code.** Localize
+from the failing security test plus the taint path, generate a minimal candidate diff with the model,
+and gate it on execution (the honest version of the two-stage proof). Lineage worth studying:
+Getafix/SapFix and modern LLM-APR. When no candidate clears the gates, do not emit a stand-in module —
+open a draft PR/issue carrying the finding and the reproduction test for a human. Route ownership from
+CODEOWNERS → `git blame` → directory service (Okta/AD) and file work in Jira/Linear with real WIP
+accounting.
+
+**For 6.E (verification/proof) — the sandbox receives only inputs and produces the verdict itself.**
+Red-team confirmation: replay the real HTTP/WS exchange against the target inside the sandbox and
+assert on the real response and canary. Fix closure: materialize the real repo at the observed
+revision, apply the candidate patch, and run the project's own detected test command plus the
+generated security test. Harden against overfitting with mutation testing (Stryker/mutmut) and
+property/metamorphic tests so a patch cannot pass by matching a single literal.
+
+**For 6.F (git/PR) — apply and verify the real diff.** Apply the proposed unified diff with
+`git apply --3way` (or a real patch library) against the cloned revision, then assert the resulting
+`git diff` equals what was displayed and fail closed on reject. Resolve the real default branch via the
+API, push a feature branch without force, and open the PR through the VCS App honoring branch
+protection and required checks.
+
+**For 6.G (sandbox/isolation) — ship a production isolation backend and name it truthfully.** Use
+gVisor, Firecracker microVMs, or Kata Containers for strong isolation, or nsjail/bubblewrap +
+seccomp-bpf + user namespaces + egress control for lighter confinement, with sandbox egress routed
+through the existing policy proxy, and fail closed in strict mode. If LiteBox is genuinely wanted,
+vendor a reproducible, pinned build and cache it in CI; otherwise drop the branding and make every
+attestation and UI label reflect the real backend.
+
+**For 6.H (credentials/secrets) — load real secrets at run time.** Fetch campaign credentials from a
+real secret store (Vault / cloud secret manager; OIDC short-lived tokens where possible) and never
+bake tokens. On desktop, implement OS-keychain storage via Electron `safeStorage`; remove the keychain
+claim until it exists.
+
+**For 6.I (UI affordances) — wire the advertised actions.** Implement real source-archive upload /
+repo-connect feeding the scanner (size/type/AV checks, ephemeral storage), and populate the model
+picker from the live allowlist/registry (6.C, §3).
+
+**For 6.J (efficacy) — measure on real corpora and publish.** Stand up a reproducible benchmark
+harness over NIST SARD/Juliet, OWASP Benchmark, WebGoat/Juice Shop/NodeGoat, curated real-CVE
+reproductions, and a held-out set of labeled real repositories; report precision/recall/F1,
+false-positive rate, mean-time-to-detect, and verified-patch-correctness, benchmarked against baselines
+(Semgrep, CodeQL, Snyk, OWASP ZAP), and gate releases on those numbers.
+
+### 6.L — Confirmed real at this commit (NOT part of the gap — keep)
 
 For fairness and to scope the work, these subsystems execute real logic and should be preserved:
 
@@ -454,13 +530,13 @@ For fairness and to scope the work, these subsystems execute real logic and shou
   (`apps/nightfall-ui/src/api/nightfall-client.ts`, `.../hooks/use-nightfall-workspace.ts`).
 - CLI: real `validate` / `sign` / `status` / `verify-audit` (`apps/nightfall-cli/src/index.ts`).
 
-### 6.L — Definition of done for "nothing mocked/faked/hardcoded"
+### 6.M — Definition of done for "nothing mocked/faked/hardcoded"
 
 The gap is closed when, for an arbitrary user-connected repository and target: findings come from real
 analysis (6.B, 6.C), patches are synthesized for the real file and applied as shown (6.D, 6.F), proofs
 run against the real checkout/target (6.E), credentials and sandbox isolation are real and honestly
 labeled (6.G, 6.H), the UI affordances are wired (6.I), and efficacy is demonstrated on real corpora
-(6.J) — with the 6.K subsystems retained.
+(6.J) — with the 6.L subsystems retained.
 
 ---
 
