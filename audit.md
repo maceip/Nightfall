@@ -92,6 +92,27 @@ The end-to-end loop is coherent only for one bundled scenario (`northstar-docs`,
 - Required change: real target onboarding (URL + credentials + authorized scope), and probe logic
   that does not depend on bundled canary constants.
 
+### 1.6 — S1 — State-mutating POSTs bypass the approval gate (risk misclassification)
+- Evidence: `PolicyGate.classifyActionRisk` returns `TIER_1_SAFE_PROBE` for every `POST` unless the
+  caller explicitly passes `mutatesState` (`packages/policy-gate/src/index.ts:83-89`). The assessment
+  creates saved searches and runs exports via POST without setting that flag
+  (`services/red-team/src/redTeamEngine.ts:677-703`), so even with `askForApproval: true` these
+  state-changing calls execute with no HITL approval (only the retention-preview POST sets it,
+  `:862-874`). Risk is an optional caller assertion, not a property of the method/endpoint.
+- Required change: derive the risk tier from method + endpoint policy (POST/PUT/PATCH/DELETE and
+  known-mutating routes are mutating by default); require mutating operations to enter the approval
+  flow regardless of a caller flag.
+
+### 1.7 — S1 — Egress scope is not re-checked on HTTP redirects
+- Evidence: `proxyHttpRequest` evaluates policy only for `input.url`, then calls `fetch` without
+  `redirect: 'manual'` (`services/red-team/src/egressProxy.ts:570-578`). An in-scope target that
+  responds with a 3xx to an off-scope origin (e.g. an internal service) is followed automatically,
+  with no repeat of the origin/path/scope checks — defeating the campaign allowlist even after the
+  signing issue (1.1) is fixed.
+- Required change: set `redirect: 'manual'` and either reject cross-origin redirects or follow them
+  hop-by-hop, re-running the full scope + policy evaluation (and rate/duration accounting) on every
+  hop.
+
 ---
 
 ## 2. Nightfall Defense Factory — required changes
@@ -143,6 +164,16 @@ The end-to-end loop is coherent only for one bundled scenario (`northstar-docs`,
   branch, no identity/app model, PR only when `GITHUB_TOKEN` + `NIGHTFALL_GITHUB_REPO` are set.
 - Required change: resolve the real default branch, avoid force-push to shared refs, and provide a
   proper GitHub App / installation auth flow.
+
+### 2.7 — S1 — "Merge and verify" never merges anything
+- Evidence: `NightfallOrchestrator.mergeAndVerifyFix` sets `status: 'merged'` immediately
+  (`services/closed-loop-orchestrator/src/index.ts:1026-1031`), then (for the bundled demo only)
+  toggles the in-memory staging server's patch and runs the circular `verifyFixClosure` (1.2 / GAP-14),
+  flipping findings to `fixed`. No real Git/PR merge occurs; for any real repository the default branch
+  is untouched while the UI reports the fix merged and the finding fixed.
+- Required change: perform a real, verified merge of the packaged branch/PR (respecting branch
+  protection and required checks), advance `merged`/`fixed` only on a confirmed merge, and run closure
+  checks against the actual resulting revision.
 
 ---
 
@@ -247,10 +278,12 @@ LLM, and a configuration page needs to list trusted vendors for this.*
 
 ### 4.4 — S2 — Declared Node floor is wrong
 - Evidence: `engines.node: ">=22.0.0"` (root `package.json`), but `node:sqlite` (`DatabaseSync`,
-  `services/closed-loop-orchestrator/src/sqliteStore.ts:3`) is not available on 22.0; it is
-  experimental behind a flag until Node 24. `pnpm dev:api` throws on a compliant install.
-- Required change: raise the floor to a version where `node:sqlite` is available/stable and document
-  any required flags, or depend on a stable SQLite library.
+  `services/closed-loop-orchestrator/src/sqliteStore.ts:3`) does not exist on Node 22.0-22.4; it was
+  added in 22.5.0 behind `--experimental-sqlite` and unflagged (still experimental) only in 22.13.0.
+  So `>=22.0.0` throws `ERR_UNKNOWN_BUILTIN_MODULE` below 22.5 and needs the flag on 22.5-22.12.
+  (Corrected per PR review; an earlier draft said "until Node 24.")
+- Required change: raise the floor to `>=22.13.0` for unflagged use (or `>=22.5` with the documented
+  flag), or depend on a stable SQLite library.
 
 ### 4.5 — S1 — API gateway has no authentication and open CORS on safety controls
 - Evidence: `services/api-gateway/src/index.ts:7` sets `Access-Control-Allow-Origin: *`; no route is
@@ -273,6 +306,26 @@ LLM, and a configuration page needs to list trusted vendors for this.*
   `NIGHTFALL_STAGING_TARGET_URL`, `NIGHTFALL_LITEBOX_BIN_DIR`, `NIGHTFALL_GITHUB_REPO` are read from
   `process.env` with no `.env.example` and no docs.
 - Required change: add `.env.example` and a configuration section documenting every variable.
+
+### 4.8 — S2 — The "immutable" audit ledger is never verified on load and rows are overwritable
+- Evidence: the orchestrator passes `store.listAuditEntries()` straight into `AuditLedger`, whose
+  constructor only parses and accepts them with no chain verification
+  (`packages/audit-ledger/src/index.ts:75-87`); the SQLite writer uses
+  `ON CONFLICT(idx) DO UPDATE SET ... payload_json = excluded.payload_json`
+  (`services/closed-loop-orchestrator/src/sqliteStore.ts:437-449`), so a modified or replaced
+  historical row is silently trusted and later entries chain from the tampered hash. `verifyIntegrity`
+  exists and the CLI uses it, but the running service never does.
+- Required change: verify the complete hash chain before serving state or appending, fail closed on
+  corruption, and make persisted audit rows strictly append-only (no `DO UPDATE`).
+
+### 4.9 — S2 — "Scheduled scans" never run (label-only scheduling)
+- Evidence: there is no scheduler/cron worker. Selecting `scheduled_scan` performs a single immediate
+  scan and stores a display label; `toggleRepositoryScans` only flips `prReviewsEnabled` and sets
+  `scheduledScanLabel: 'Daily at 8:00 AM UTC'` / `'Scheduled'` while the audit summary claims scheduled
+  scans were enabled (`services/closed-loop-orchestrator/src/index.ts:1127-1144`). Users see "Daily",
+  "Weekly", or cron coverage that will never execute.
+- Required change: persist schedules and execute them through a real scheduler/worker, or remove the
+  scheduled-coverage claims from the UI and audit text.
 
 ---
 
@@ -306,6 +359,10 @@ requires). Severity reuses the legend above.
   findings (`SAST-DEAD-01`, `SAST-SANITIZED-02`), and cosmetic
   `budgetRemainingPct: 94` (`services/closed-loop-orchestrator/src/index.ts:390-465`, `:525`).
   Real-state: no auto-seeded campaign; state starts empty and is populated by real user actions.
+- **GAP-26 — S2 — "Scheduled scans" are label-only; no scheduler exists.** `scheduled_scan` runs one
+  immediate scan and stores a cron display label; `toggleRepositoryScans` only flips a flag and sets
+  `'Daily at 8:00 AM UTC'` (`services/closed-loop-orchestrator/src/index.ts:1127-1144`). No later scan
+  runs. Real-state: a real scheduler/worker that executes persisted schedules.
 
 ### 6.B — Red Team detection (findings are scripted, not discovered)
 
@@ -386,6 +443,11 @@ requires). Severity reuses the legend above.
 - **GAP-19 — S2 — PR base and push are hardcoded.** `base: 'main'` and `push --force`
   (`gitPackager.ts:235`, `:208`). Real-state: resolve the real default branch; no force-push to shared
   refs; real app/installation auth.
+- **GAP-27 — S1 — "Merge and verify" never merges.** `mergeAndVerifyFix` sets `status: 'merged'`
+  immediately and flips findings to `fixed` via the circular closure check, toggling only an in-memory
+  staging patch for the demo (`services/closed-loop-orchestrator/src/index.ts:1026-1050`). The real
+  branch/PR is never merged. Real-state: a real verified merge, with state advanced only on confirmation
+  and closure run against the resulting revision (see 2.7).
 
 ### 6.G — Sandbox / Microsoft LiteBox (claimed isolation never occurs)
 
@@ -422,6 +484,11 @@ requires). Severity reuses the legend above.
   `redTeamEngine.ts:158-187`). Real-state: real source-archive ingestion feeding analysis.
 - **GAP-24 — S2 — Model picker lists fictional models.** The composer selects among the GAP-08 model
   IDs (`composer-screen.tsx:43`, `:147-148`). Real-state: list real, configured, allowlisted models.
+- **GAP-28 — S2 — The finding report links to a "downloaded ZIP" that does not exist.** The report says
+  "See the private document in the downloaded ZIP" but the link is an in-page anchor to `#sec-evidence`
+  (`apps/nightfall-ui/src/screens/red-team/finding-report-screen.tsx:53-59`); there is no evidence-export
+  API, client method, or handler anywhere in the repo. Real-state: generate and download a sanitized
+  evidence bundle, or remove the promise.
 
 ### 6.J — Efficacy is measured only against synthetic testbeds
 
@@ -512,8 +579,9 @@ false-positive rate, mean-time-to-detect, and verified-patch-correctness, benchm
 
 For fairness and to scope the work, these subsystems execute real logic and should be preserved:
 
-- Audit ledger: real SHA-256 hash-chained entries with integrity verification
-  (`packages/audit-ledger/src/index.ts:40-67`, `verifyIntegrity`).
+- Audit ledger: real SHA-256 hash-chained entries with a working `verifyIntegrity`
+  (`packages/audit-ledger/src/index.ts:40-67`). Caveat: the running service never calls it on load and
+  persisted rows are overwritable — see 4.8; the primitive is real but its guarantee is not enforced.
 - SQLite persistence: real `node:sqlite` WAL store
   (`services/closed-loop-orchestrator/src/sqliteStore.ts`).
 - Egress proxy: real L7 HTTP/WS proxy, real `fetch`/WebSocket forwarding, real token-bucket rate
