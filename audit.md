@@ -972,6 +972,91 @@ autonomous testing (5.1, 5.2, 7.5), because that is what lets an enterprise perm
 
 ---
 
+## 8. UI/UX gaps (assuming Sections 0–7 are resolved)
+
+This section assumes every backend, safety and enterprise gap above is fixed. What remains are places
+where the interface itself would confuse or mislead a user, and capabilities that would complete the
+user story. Keyboard navigation, screen-reader behavior and color contrast were not assessed and need
+a dedicated accessibility review.
+
+### 8.1 Where a user would be confused
+- **UX-01 — Three competing navigation systems.** An icon rail, a row of top "tabs", and a sidebar
+  offer overlapping, inconsistent destinations (`apps/nightfall-ui/src/components/three-column-shell.tsx:99-114,196-240`).
+  The top tabs look like browser tabs but are three fixed links, with `campaign.yaml` placed as a peer
+  of the two products. Needed: one primary navigation model with one place for each destination.
+- **UX-02 — Dead and decorative controls.** The rail "More" button has no action (`:104`), Forward is
+  permanently disabled (`:150`), and in the browser the header draws fake window-control dots
+  (`:140-146`). Needed: remove or implement.
+- **UX-03 — Nothing is addressable.** All location state is React state (`apps/nightfall-ui/src/App.tsx:31-39`); a
+  refresh loses the user's place and a finding, fix or campaign cannot be linked to. Needed: URL
+  routing and shareable deep links.
+- **UX-04 — One finding, two identities and two pages.** Red Team findings (`F-…`) open in a "finding
+  report" and scanner findings (`SEC-…`) in "finding detail"
+  (`apps/nightfall-ui/src/screens/red-team/finding-report-screen.tsx`, `apps/nightfall-ui/src/screens/defense-factory/finding-detail-screen.tsx`).
+  Needed: one finding object, one ID scheme, one page.
+- **UX-05 — The global repository filter filters one screen.** The selector is shown on every
+  Defense Factory section (`three-column-shell.tsx:259`) but its value reaches only the Findings screen
+  (`App.tsx:149`). Needed: apply it everywhere it is shown, or show it only where it applies.
+- **UX-06 — Status indicators that are not derived from status.** The campaign pill reads
+  "In progress" unless the kill-switch is engaged, even when the campaign is completed or paused
+  (`apps/nightfall-ui/src/screens/red-team/live-campaign-screen.tsx:101`); the headline dot is always green (`:127`);
+  "Updated just now" is a stored string that never ages
+  (`services/closed-loop-orchestrator/src/index.ts:528,1178`). Needed: render state and relative time
+  from the real status and timestamp.
+- **UX-07 — Only one campaign is reachable.** Red Team always opens the first campaign
+  (`App.tsx:47`); there is no list, history or comparison. Needed: a campaigns index.
+- **UX-08 — Architecture used as interface language.** "Parallel Agent Hypothesis Lease Queue",
+  "Persistent Cross-Agent Shared Memory", "HITL Approval Required (TIER_2_STATE_MUTATING)"
+  (`apps/nightfall-ui/src/screens/red-team/campaign-detail-panels.tsx:95,112,117`), "Live API + SSE"
+  (`three-column-shell.tsx`). Needed: task language ("Needs your approval", "What we tested",
+  "What we ruled out").
+- **UX-09 — No first-run experience.** The app opens on Findings (`App.tsx:31`) with no path from
+  connecting a repository to a first verified result. Needed: guided onboarding and useful empty states.
+
+### 8.2 Where a user would be led astray
+- **UX-10 — Consequential actions are one click, with no confirmation or undo.** The kill-switch and
+  its reset fire immediately, and its label says "Halt Sandboxes" while it halts campaigns
+  (`three-column-shell.tsx:184-187`); "Mark as duplicate" discards a finding with no choice of which
+  finding it duplicates (`:279`); "Merge & Verify Fix" merges immediately
+  (`apps/nightfall-ui/src/screens/defense-factory/fix-drawer.tsx:170-185`). Needed: confirmation scaled to consequence,
+  undo for triage, accurate labels.
+- **UX-11 — A fix can be merged without its diff being seen.** The diff is hidden behind a "Review
+  changes" toggle next to the merge button (`fix-drawer.tsx:161-185`). Needed: show the diff, the
+  failing-then-passing test and regression results by default; make merge a deliberate second step.
+- **UX-12 — Navigation starts work as a side effect.** "Promote to Defense Factory" both navigates and
+  begins generating a fix (`App.tsx:256-260`). Needed: separate "view" from "start".
+- **UX-13 — Approvals are buried and under-explained.** A paused campaign shows only "(1 gate)" on its
+  third tab (`live-campaign-screen.tsx:116`); the card shows a method and URL but not what will change,
+  how to reverse it, who asked, or when it expires (`campaign-detail-panels.tsx:90-108`). Needed: a
+  global approvals inbox with consequence, requester and expiry.
+- **UX-14 — Scope is authored as free text.** The most safety-critical input is a raw YAML textarea
+  (`apps/nightfall-ui/src/screens/red-team/campaign-yaml-screen.tsx:104`) with no inline validation, plain-language
+  summary, or preview. Needed: a structured scope builder with a dry-run listing the requests that
+  would be sent.
+- **UX-15 — Long operations give no feedback.** Launching a campaign awaits the entire assessment
+  (`App.tsx:223-227`) with no progress, partial results or cancel; errors surface as one dismissible
+  line of raw text (`App.tsx:122-127`). Needed: asynchronous jobs with progress and cancel, and
+  actionable error messages.
+
+### 8.3 Capabilities that would complete the user story
+1. **One finding with a visible lifecycle** — detected, confirmed exploitable, fix proposed, merged,
+   re-verified — with the evidence for each step on a single page. This is the product's
+   differentiator and is currently split across two products and a drawer.
+2. **Evidence a non-specialist can follow** — a replayable view of request, response and "what should
+   have happened", answering "why is this real?".
+3. **Role-based home screens** — developer ("my findings and fixes"), security lead (triage queues and
+   SLAs), executive (trend and exposure).
+4. **Campaign history and comparison** — what changed since the last run, what regressed, what was
+   newly covered.
+5. **Triage at scale** — bulk actions, saved views, global search, a command palette, and "what
+   changed since my last visit".
+6. **Honest uncertainty** — show confidence and what was not tested, so "no findings" is not read as
+   "secure".
+7. **Notifications** — in-app and external alerts for approvals, completed campaigns and failed
+   verifications.
+
+---
+
 ## Priority order for remediation
 
 1. Stop the destructive/unsafe paths: 2.1 (whole-file overwrite), 4.5 (unauthenticated safety
@@ -982,3 +1067,4 @@ autonomous testing (5.1, 5.2, 7.5), because that is what lets an enterprise perm
 5. Make it trustworthy: 5.8 first (withdraw untrue claims immediately — it costs nothing and removes
    the largest reputational risk), then 5.1–5.3 (identity, authorization to test, evidence handling),
    then 5.5–5.7 and 5.9–5.10.
+6. Make it usable: 8.2 first (UX-10 to UX-15 can cause harm), then 8.1, then 8.3.
