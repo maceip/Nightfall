@@ -567,6 +567,18 @@ requires). Severity reuses the legend above.
   (`apps/nightfall-ui/src/screens/defense-factory/fix-drawer.tsx:94-99,170-185`;
   `services/closed-loop-orchestrator/src/index.ts:1021-1023`). Real-state: render suppression and failed
   gates truthfully and disable actions that cannot run.
+- **GAP-32 — S2 — Unconditional "verified" badges assert checks that never ran.** The audit screen shows
+  `SHA-256 Chain Verified ✓` on an "Immutable Hash-Chained Audit Ledger" with no verification behind it
+  (`apps/nightfall-ui/src/screens/defense-factory/scans-audit-screen.tsx:116-120`; the running service
+  never calls `verifyIntegrity`, 4.8), and the fixes screen labels every proposal — suppressed ones
+  included — "N verified fix proposal(s) active" (`fixes-screen.tsx:119-120`). Real-state: show
+  integrity/verified state only from an actual check, and exclude suppressed/unverified items from
+  "verified" counts.
+- **GAP-33 — S3 — The campaign "budget remaining" bar is a synthetic function of request count.**
+  `budgetRemainingPct` is hardcoded to 94 at bootstrap (GAP-03) and computed as `100 - totalHits*0.8` on
+  launch (`services/closed-loop-orchestrator/src/index.ts:1258-1261`), not derived from real
+  model/compute cost; the ModelGateway's real cost budget is never surfaced. Real-state: drive the budget
+  display from actual cost/usage accounting.
 
 ### 6.J — Efficacy is measured only against synthetic testbeds
 
