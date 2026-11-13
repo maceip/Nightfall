@@ -848,6 +848,94 @@ from ongoing automated review are verified and folded in as they arrive.
 
 ---
 
+## 7. Enterprise capability extension (what makes it useful and best in breed)
+
+Sections 0–6 close the gap to "real and trustworthy." This section lists capabilities that do not
+exist in any form at this commit and that an enterprise would need for the product to be useful in
+practice and competitive. "Today" states what the code has; "Needed" is the best-in-class target.
+
+### 7.1 Coverage breadth
+- **Languages and rules.** Today: six regex rule families over `.py/.ts/.tsx/.js/.mjs/.cjs/.go`
+  (`services/defense-factory/src/repositoryScanner.ts:19-27,357-625`). Needed: Java, C#, Kotlin, Ruby,
+  PHP, Rust, C/C++ plus framework-aware rules (Spring, Django, Rails, Express, ASP.NET), with a
+  customer-authorable rule language and per-rule precision data.
+- **Finding classes beyond first-party code.** Today: none. Needed: dependency (SCA) analysis with
+  reachability, secret detection with validity checks, infrastructure-as-code and container image
+  scanning, and API-spec conformance — so one platform covers what buyers otherwise assemble from four.
+- **Dynamic testing depth.** Today: three scripted probes. Needed: authenticated crawling with login
+  recording (SSO, OAuth, MFA, session refresh), OpenAPI/GraphQL/gRPC-driven testing, the OWASP API
+  Top 10 classes (object- and function-level authorization, mass assignment, SSRF, injection), and
+  business-logic testing across multiple roles and tenants.
+
+### 7.2 Workflow integration
+- **Source control.** Today: one raw GitHub REST call with a personal token
+  (`services/defense-factory/src/gitPackager.ts:221-260`). Needed: first-class GitHub App, GitLab,
+  Bitbucket and Azure DevOps integrations with PR checks, inline review comments, CODEOWNERS routing,
+  and branch-protection awareness.
+- **CI/CD gating.** Today: none. Needed: a CI action/CLI that fails builds on policy violations,
+  diff-aware scanning of changed code only, and baseline suppression so adoption does not start with
+  thousands of legacy findings.
+- **Ticketing and chat.** Today: none. Needed: bidirectional Jira/ServiceNow/Linear sync and
+  Slack/Teams notifications and approvals, so the human-approval gate reaches people where they work.
+- **Interchange.** Today: none. Needed: SARIF import/export, ingestion of third-party scanner output
+  for deduplication and verification, and a documented REST/GraphQL API with webhooks and SDKs.
+- **Developer surface.** Today: a desktop app and a four-command CLI. Needed: IDE extensions and
+  pre-commit hooks so findings and fixes appear before code is pushed.
+
+### 7.3 Risk prioritization and program management
+- **Prioritization.** Today: a static severity per rule. Needed: risk scoring that combines
+  exploitability evidence (the Red Team confirmation is the differentiator here), reachability,
+  internet exposure, asset criticality, data sensitivity, and external signals (EPSS, CISA KEV).
+- **Asset inventory.** Today: a flat repository list. Needed: applications, services, owners,
+  environments and business units, with repository-to-deployed-service mapping.
+- **SLA and exceptions.** Today: none. Needed: remediation SLAs by severity, breach alerts,
+  time-boxed risk acceptance with approver and expiry, and false-positive feedback that tunes rules.
+- **Reporting.** Today: one overview screen. Needed: trend and mean-time-to-remediate dashboards by
+  team, executive and auditor reports, and control mapping to SOC 2, ISO 27001, PCI DSS, NIST SSDF and
+  OWASP ASVS, exportable as evidence.
+
+### 7.4 Remediation quality
+- Today: fixture patches (GAP-10). Needed beyond making them real: multi-file and cross-service
+  fixes, dependency upgrade PRs with breaking-change analysis, fix grouping by root cause across
+  repositories, respect for each repository's style, tests and commit conventions, a measured
+  fix-acceptance rate, and automatic rollback of a merged fix if post-deploy verification regresses.
+
+### 7.5 Safe offensive operation at scale
+- Today: one in-process assessment against one target. Needed: environment classes with different
+  permitted risk tiers (production read-only vs. staging mutating), maintenance windows and blackout
+  periods, per-target rate and concurrency budgets, automatic test-data cleanup, tamper-evident
+  replayable evidence, and continuous re-verification of previously fixed findings on every deploy.
+
+### 7.6 Architecture for scale and availability
+- Today: a single Node process with one SQLite file and in-memory queues (4.10, 4.13). Needed: a
+  horizontally scalable control plane on a server database (PostgreSQL), a durable job queue with
+  isolated worker pools, incremental and cached scanning for monorepos, multi-tenant isolation with
+  org/team hierarchy and quotas, high availability, backup and disaster recovery with stated
+  recovery objectives, and published performance figures (scan time per 100k lines).
+
+### 7.7 Deployment and administration
+- Today: a developer compose file and debug installers. Needed: SaaS, self-hosted (Helm chart,
+  Terraform modules) and air-gapped deployment options; customer-managed encryption keys; regional
+  data residency; SCIM user provisioning alongside SSO (5.1); fine-grained custom roles; audit-log
+  streaming to SIEM (Splunk, Sentinel, Datadog); and admin policy-as-code for scan, approval and
+  model-vendor rules (3.2).
+
+### 7.8 Commercial readiness
+- Today: none. Needed: usage metering and license enforcement, versioned releases with a changelog
+  and deprecation policy, upgrade and migration tooling (4.12), documentation and onboarding that
+  reaches first verified finding in under an hour, support tiers with response SLAs, and a public
+  status page and security advisory process.
+
+### 7.9 Where to be best in breed rather than at parity
+The defensible differentiator is the closed loop itself, once real: a finding that arrives already
+proven exploitable in the customer's staging environment, with a patch already proven by a
+failing-then-passing test, and re-verified after deploy. Most of 7.1–7.8 is parity with existing
+scanners; investment should favor (a) verified-exploitability evidence as the prioritization signal,
+(b) measured, published fix-acceptance and false-positive rates, and (c) the safety model for
+autonomous testing (5.1, 5.2, 7.5), because that is what lets an enterprise permit the tool to act.
+
+---
+
 ## Priority order for remediation
 
 1. Stop the destructive/unsafe paths: 2.1 (whole-file overwrite), 4.5 (unauthenticated safety
