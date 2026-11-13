@@ -1196,9 +1196,9 @@ running. Readers should weigh the findings accordingly.
   Section 9 test before being relied on.
 - **Not examined:** the built desktop application on macOS or Windows, the Docker Compose stack
   running, accessibility, performance under load, and the `ui-kit` components beyond a search for
-  embedded data. Roughly a third of the UI screen code was read in full; the rest was searched.
-- **External review:** five rounds of automated review contributed 23 findings, each checked against
-  the code before inclusion; that reviewer then reached its usage limit, so the last four sections
+  embedded data. Only some UI screens were read in full; the rest were searched.
+- **External review:** three rounds of automated review raised 20 findings; 19 were confirmed against
+  the code and included, one was already addressed; that reviewer then reached its usage limit, so the last four sections
   have had no second reviewer.
 - **Line references** are to commit `7273506` and will drift.
 
