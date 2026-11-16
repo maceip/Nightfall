@@ -1,3 +1,4 @@
+<img width="512" src="https://github.com/user-attachments/assets/26681785-8445-4f0f-a761-fb8a926723dd" />
 # Nightfall
 
 **Nightfall** is a unified, closed-loop application security platform combining two autonomous subprojects inside a native-style three-column **Electron + Web** workspace built on the repo-wide **`webclaw` Design System** and isolated with **Microsoft LiteBox**:
