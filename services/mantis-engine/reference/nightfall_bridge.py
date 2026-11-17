@@ -230,6 +230,10 @@ class RunTargetMismatchError(LookupError):
     pass
 
 
+class AmbiguousRunError(LookupError):
+    pass
+
+
 def run_ids(db_path: str) -> set[str]:
     if not os.path.exists(db_path):
         return set()
@@ -316,7 +320,11 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, _stop)
     proc.wait()
-    run_id = _scanned_run_id(db_path, before, args.mantis_args, args.target)
+    try:
+        run_id = _scanned_run_id(db_path, before, args.mantis_args, args.target)
+    except AmbiguousRunError as err:
+        print(str(err), file=sys.stderr)
+        return 1
     reused = run_id is not None and run_id in before
     untouched = run_id != resumed or resumed_before == _run_fingerprint(db_path, run_id)
     if reused and proc.returncode != 0 and untouched:
@@ -365,24 +373,35 @@ def _run_fingerprint(db_path: str, run_id: Optional[str]) -> Optional[tuple[Any,
 
 
 def _resume_target(mantis_args: list[str]) -> Optional[str]:
-    """The run named by --resume: its id, "" for "the latest", None without --resume."""
+    """The run named by --resume: its id, "" for "the latest", None without --resume.
+
+    As with argparse, the last occurrence wins.
+    """
+    found: Optional[str] = None
     for i, arg in enumerate(mantis_args):
         if arg.startswith("--resume="):
-            return arg.split("=", 1)[1]
-        if arg == "--resume":
+            found = arg.split("=", 1)[1]
+        elif arg == "--resume":
             nxt = mantis_args[i + 1] if i + 1 < len(mantis_args) else ""
-            return "" if not nxt or nxt.startswith("-") else nxt
-    return None
+            found = "" if not nxt or nxt.startswith("-") else nxt
+    return found
 
 
 def _scanned_run_id(db_path: str, before: set[str], mantis_args: list[str],
                     target: Optional[str] = None) -> Optional[str]:
     """The run this scan wrote: a new run, or the run it resumed."""
     new_runs = run_ids(db_path) - before
+    if len(new_runs) > 1 and target:
+        want = _root(target)
+        new_runs = {r for r in new_runs if run_target_root(db_path, r) in (want, None)}
     if len(new_runs) == 1:
         return next(iter(new_runs))
     if new_runs:
-        return latest_run_id(db_path, target) or latest_run_id(db_path)
+        # Another scan of the same target wrote to this database at the same
+        # time: there is no telling which run is ours, so this is a failure.
+        raise AmbiguousRunError(
+            f"Several new Mantis runs appeared in {db_path} during this scan: {sorted(new_runs)}; "
+            "give concurrent scans separate databases")
     resumed = _resume_target(mantis_args)
     if resumed:
         return resumed if resumed in run_ids(db_path) else None

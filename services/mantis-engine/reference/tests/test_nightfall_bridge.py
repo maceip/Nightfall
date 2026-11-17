@@ -163,6 +163,14 @@ class NightfallBridgeTest(unittest.TestCase):
         self.assertEqual(nightfall_bridge._resume_target(["--resume", "--yes"]), "")
         self.assertEqual(nightfall_bridge._resume_target(["--resume"]), "")
         self.assertIsNone(nightfall_bridge._resume_target(["--depth", "5"]))
+        self.assertEqual(nightfall_bridge._resume_target(["--resume", "a", "--resume=b"]), "b", "last one wins")
+
+    def test_several_new_runs_over_the_target_are_ambiguous(self):
+        with self.assertRaises(nightfall_bridge.AmbiguousRunError):
+            with sqlite3.connect(self.db) as conn:
+                conn.execute("INSERT INTO runs (run_id) VALUES ('x1')")
+                conn.execute("INSERT INTO runs (run_id) VALUES ('x2')")
+            nightfall_bridge._scanned_run_id(self.db, {"run-0", "run-1"}, [], self.tmp)
 
 
 class NightfallBridgeScanTest(unittest.TestCase):
