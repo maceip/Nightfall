@@ -119,25 +119,56 @@ describe('@nightfall/closed-loop-orchestrator Zero-Mock SQLite NightfallOrchestr
     expect(dupRes.overview.openFindingsCount).toBe(expectedOpen);
     assertExactSankeyConservation(dupRes.overview);
 
-    // 3. Start fix for TypeScript auth-gateway finding (runs real node --experimental-strip-types --test proof)
-    const authFinding = boot.findings.find((f) => f.repository === 'auth-gateway')!;
+    // 3. Start fix for Scorecard Dangerous-Workflow finding on auth-gateway (runs real LiteBox two-stage proof)
+    expect(boot.scorecardToolchain.available).toBe(true);
+    expect(boot.scorecardReports.length).toBe(5);
+    const beforeAuthReport = boot.scorecardReports.find((r) => r.repository === 'auth-gateway')!;
+    expect(
+      beforeAuthReport.checks.find((c) => c.name === 'Dangerous-Workflow')?.score,
+    ).toBe(0);
+
+    const authFinding = boot.findings.find(
+      (f) => f.repository === 'auth-gateway' && f.sources.includes('scorecard'),
+    )!;
     const startFixRes = await orchestrator.startFixForFinding(authFinding.id);
     expect(startFixRes.fix.status).toBe('proposed');
+    expect(startFixRes.fix.snapshotLabel).toBe('Nightfall · Scorecard handoff');
     expect(startFixRes.fix.commitSha).toMatch(/^[0-9a-f]{40}$/);
     expect(startFixRes.finding.fixId).toBe(startFixRes.fix.id);
     assertExactSankeyConservation(startFixRes.overview);
+
+    // Merge Scorecard fix and prove live Scorecard re-evaluation confirms Dangerous-Workflow jumped 0 -> 10
+    const scMergeRes = await orchestrator.mergeAndVerifyFix(startFixRes.fix.id);
+    expect(scMergeRes.fix.status).toBe('merged');
+    expect(scMergeRes.scorecardReport).toBeDefined();
+    expect(
+      scMergeRes.scorecardReport?.checks.find((c) => c.name === 'Dangerous-Workflow')?.score,
+    ).toBe(10);
+    expect(scMergeRes.scorecardReport!.aggregateScore).toBeGreaterThan(
+      beforeAuthReport.aggregateScore,
+    );
+
+    // Also start fix for TypeScript auth-gateway finding (runs real node --experimental-strip-types --test proof)
+    const tsAuthFinding = boot.findings.find(
+      (f) => f.repository === 'auth-gateway' && !f.sources.includes('scorecard'),
+    )!;
+    const tsFixRes = await orchestrator.startFixForFinding(tsAuthFinding.id);
+    expect(tsFixRes.fix.status).toBe('proposed');
+    expect(tsFixRes.fix.commitSha).toMatch(/^[0-9a-f]{40}$/);
+    assertExactSankeyConservation(tsFixRes.overview);
 
     // 4. Merge and verify FIX-F-002 (closes both F-002 and its SAST twin in the same root-cause cluster!)
     const mergeRes = await orchestrator.mergeAndVerifyFix('FIX-F-002');
     expect(mergeRes.fix.status).toBe('merged');
     expect(mergeRes.finding?.status).toBe('fixed');
     expect(mergeRes.finding?.fixVerification).toBe('verified');
-    expect(mergeRes.overview.fixedFindingsCount).toBeGreaterThanOrEqual(1);
+    expect(mergeRes.overview.fixedFindingsCount).toBeGreaterThanOrEqual(2);
     assertExactSankeyConservation(mergeRes.overview);
 
     expect(events.some((e) => e.type === 'scan.updated')).toBe(true);
     expect(events.some((e) => e.type === 'finding.updated')).toBe(true);
     expect(events.some((e) => e.type === 'fix.updated')).toBe(true);
+    expect(events.some((e) => e.type === 'scorecard.updated')).toBe(true);
     expect(events.some((e) => e.type === 'audit.appended')).toBe(true);
     unsubscribe();
   });

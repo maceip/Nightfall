@@ -16,6 +16,7 @@
     "dev:web": "pnpm --filter @nightfall/nightfall-ui dev:web",
     "dev:desktop": "pnpm --filter @nightfall/nightfall-ui dev:desktop",
     "build": "pnpm -r --filter './packages/*' --filter './services/*' --filter './apps/*' build",
+    "build:scorecard": "bash infra/scorecard/build-scorecard.sh",
     "build:desktop": "pnpm --filter @nightfall/nightfall-ui run build:desktop",
     "bundle:desktop": "pnpm --filter @nightfall/nightfall-ui run bundle --",
     "bundle:desktop:dmg": "pnpm --filter @nightfall/nightfall-ui run bundle:dmg",

@@ -6,6 +6,7 @@ import {
   MetadataRail,
   NightfallHorizonIcon,
   RedTeamSparkIcon,
+  ScorecardPostureIcon,
   SeverityBadge,
   StatusBadge,
   UnifiedDiffViewer,
@@ -109,6 +110,7 @@ export function FindingDetailScreen({
           <span className="inline-flex items-center gap-1.5">
             <NightfallHorizonIcon size={16} />
             {finding.sources.includes('red-team') ? <RedTeamSparkIcon size={14} /> : null}
+            {finding.sources.includes('scorecard') ? <ScorecardPostureIcon size={15} /> : null}
           </span>
         </MetadataField>
         <MetadataField label="OWNER">

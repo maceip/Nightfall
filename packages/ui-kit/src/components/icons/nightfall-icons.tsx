@@ -254,3 +254,39 @@ export function RedTeamCampaignBadge({
     </svg>
   );
 }
+
+export function ScorecardPostureIcon({
+  size = 16,
+  className,
+}: {
+  size?: number;
+  className?: string;
+}): React.ReactElement {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      aria-hidden="true"
+      className={cn('shrink-0 text-emerald-700', className)}
+    >
+      <path
+        d="M10 2.2L16.4 4.9V9.8C16.4 13.7 13.7 16.9 10 17.9C6.3 16.9 3.6 13.7 3.6 9.8V4.9L10 2.2Z"
+        fill="currentColor"
+        fillOpacity="0.14"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M7.3 10.1L9.2 12L13 8.1"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+

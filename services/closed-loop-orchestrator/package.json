@@ -18,6 +18,7 @@
     "@nightfall/audit-ledger": "workspace:*",
     "@nightfall/model-gateway": "workspace:*",
     "@nightfall/red-team": "workspace:*",
-    "@nightfall/defense-factory": "workspace:*"
+    "@nightfall/defense-factory": "workspace:*",
+    "@nightfall/scorecard": "workspace:*"
   }
 }

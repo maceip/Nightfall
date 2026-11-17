@@ -1,10 +1,11 @@
 <img width="512" src="https://github.com/user-attachments/assets/26681785-8445-4f0f-a761-fb8a926723dd" />
 
-**Nightfall** is a unified, closed-loop application security platform combining two autonomous subprojects inside a native-style three-column **Electron + Web** workspace built on the repo-wide **`webclaw` Design System** and isolated with **Microsoft LiteBox**:
+**Nightfall** is a unified, closed-loop application security platform combining three fused offerings inside a native-style three-column **Electron + Web** workspace built on the repo-wide **`webclaw` Design System** and isolated with **Microsoft LiteBox**:
 
 1. **Nightfall Red Team (`services/red-team`)** — Automated Application Security Assessment Platform. Combines source-archive/repository code intelligence with live, scope-enforced HTTP and WebSocket dynamic verification (`campaign.yaml` v5) routed through the **L7 Egress Policy Proxy** and isolated inside **Microsoft LiteBox (`microsoft/litebox`)** sandboxes to confirm real weaknesses with reproducible `EvidenceBundle` proofs, discard unreachable static false positives, and re-test fixes post-deployment.
 2. **Nightfall Defense Factory (`services/defense-factory`)** — Continuous Vulnerability Remediation Platform. Scans real repositories and local workspaces (`RepositoryScanner`), deduplicates findings by root cause (`RootCauseDeduplicator`), routes work items to code owners within WIP velocity caps, synthesizes minimal patches verified by a mandatory **Two-Stage Test Proof** (`Red` failing reproduction test → `Green` minimal patch + full regression suite + independent Critic gate) inside **Microsoft LiteBox**, and commits reviewable Git branches/PRs (`GitPatchPackager`).
-3. **Nightfall Three-Column Desktop & Web UI (`packages/ui-kit` + `apps/nightfall-ui`)** — Modular React 19 + TypeScript + Vite renderer built exclusively from `@nightfall/ui-kit` (`webclaw` `oklch` design tokens, `@base-ui/react` primitives, `@hugeicons/react` icons, `PromptInput`, interactive 3-stage `SankeyDiagram`, and `UnifiedDiffViewer`), wrapped in a hardened `hiddenInset` Electron shell (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`) and backed by durable `node:sqlite` (`WAL`) persistence with zero runtime mock fallbacks.
+3. **Nightfall Scorecard (`vendor/scorecard` + `services/scorecard`)** — Fused Supply-Chain & CI Workflow Posture Engine. Vendors and restyles `ossf/scorecard` (`Apache-2.0`) as a persistent loopback Go daemon (`nightfall-scorecard serve`) with single-pass `--format=nightfall` JSON + structured probe evidence, promotes actionable CI/supply-chain hazards (`Dangerous-Workflow`, `Token-Permissions`, `Pinned-Dependencies`, `Binary-Artifacts`) directly into Defense Factory for Microsoft LiteBox patch verification, and re-runs Scorecard post-merge to prove live posture improvement.
+4. **Nightfall Three-Column Desktop & Web UI (`packages/ui-kit` + `apps/nightfall-ui`)** — Modular React 19 + TypeScript + Vite renderer built exclusively from `@nightfall/ui-kit` (`webclaw` `oklch` design tokens, `@base-ui/react` primitives, `@hugeicons/react` icons, `PromptInput`, interactive 3-stage `SankeyDiagram`, `ScorecardPostureMeter`, and `UnifiedDiffViewer`), wrapped in a hardened `hiddenInset` Electron shell (`contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`) and backed by durable `node:sqlite` (`WAL`) persistence with zero runtime mock fallbacks.
 
 ---
 
@@ -13,10 +14,10 @@
 ```text
 Nightfall/
 ├── apps/
-│   ├── nightfall-ui/                # Modular (<300 LOC/file) Electron + Web UI consuming @nightfall/ui-kit
-│   └── nightfall-cli/               # CLI for campaign.yaml signing/validation, scans & audit checks
+│   ├── nightfall-ui/                # Modular (<320 LOC/file) Electron + Web UI consuming @nightfall/ui-kit
+│   └── nightfall-cli/               # CLI for campaign.yaml signing/validation, scorecard scans & audit checks
 ├── packages/
-│   ├── core-contracts/              # Zod/TS schemas: CampaignYamlV5, Ed25519 ScopeManifest, Finding, Fix
+│   ├── core-contracts/              # Zod/TS schemas: CampaignYamlV5, Ed25519 ScopeManifest, Finding, Fix, Scorecard
 │   ├── ui-kit/                      # Repo-wide webclaw Design System (@base-ui/react, @hugeicons/react, oklch tokens)
 │   ├── sandbox-runtime/             # Microsoft LiteBox Library OS runtime + SHA-256 TeardownAttestation
 │   ├── policy-gate/                 # Risk-tier evaluator, Ask-for-Approval HITL gate & <1s Kill-Switch
@@ -27,11 +28,15 @@ Nightfall/
 │   ├── api-gateway/                 # Live Node HTTP + SSE streaming BFF (:4000) + staging target (:4010)
 │   ├── red-team/                    # Campaign compiler, L7 HTTP+WS Egress Policy Proxy & live verifier agents
 │   ├── defense-factory/             # Real RepositoryScanner, LiteBox 2-stage proof & GitPatchPackager
+│   ├── scorecard/                   # Fused Nightfall Scorecard Go daemon supervisor, CLI formatter & finding mapper
 │   └── closed-loop-orchestrator/    # Durable node:sqlite (WAL) closed-loop state machine
+├── vendor/
+│   └── scorecard/                   # Vendored & restyled ossf/scorecard Go engine (nightfall-scorecard)
 ├── benchmarks/
 │   └── testbeds/                    # Live local multi-tenant staging target & Microsoft LiteBox E2E suites
 └── infra/
-    ├── litebox/                     # build-litebox.sh & multi-stage Dockerfile.litebox (microsoft/litebox)
+    ├── litebox/                     # build-litebox.sh & multi-stage Dockerfile.litebox (LiteBox + Scorecard)
+    ├── scorecard/                   # build-scorecard.sh cross-platform Go build & Electron tool staging
     └── deploy/                      # Zero-egress Docker Compose network & persistent SQLite volume
 ```
 
@@ -40,8 +45,9 @@ Nightfall/
 ## Quickstart
 
 ```bash
-# Optional: build/update Microsoft LiteBox (litebox_runner_linux_userland, litebox_packager, litebox_syscall_rewriter)
+# Build/provision Microsoft LiteBox and the vendored Nightfall Scorecard Go engine
 ./infra/litebox/build-litebox.sh
+pnpm build:scorecard
 
 # Install workspace dependencies
 pnpm install
@@ -49,6 +55,9 @@ pnpm install
 # Run full TypeScript check and Vitest suite across all packages, services, UI & E2E benchmarks
 pnpm typecheck
 pnpm test
+
+# Evaluate supply-chain & CI workflow posture from the fused Nightfall CLI
+pnpm --filter @nightfall/nightfall-cli exec tsx src/bin.ts scorecard --local .
 
 # Start the live REST + SSE API Gateway (:4000) + local staging target (:4010)
 pnpm dev:api

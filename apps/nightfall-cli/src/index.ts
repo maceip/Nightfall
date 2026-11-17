@@ -10,6 +10,10 @@ import {
 } from '@nightfall/core-contracts';
 import { AuditLedger } from '@nightfall/audit-ledger';
 import { NightfallOrchestrator } from '@nightfall/closed-loop-orchestrator';
+import {
+  ScorecardService,
+  formatScorecardReportTable,
+} from '@nightfall/scorecard';
 
 export const PACKAGE_NAME = '@nightfall/nightfall-cli';
 
@@ -32,6 +36,7 @@ const USAGE_TEXT = `Nightfall CLI (@nightfall/nightfall-cli)
 Usage:
   nightfall validate <campaign.yaml>
   nightfall sign <campaign.yaml> [--out <signed.json>]
+  nightfall scorecard [<path-or-repo>] [--remote] [--checks <c1,c2>] [--details] [--json]
   nightfall status
   nightfall verify-audit [--file <entries.json>]
 `;
@@ -156,6 +161,58 @@ export async function runNightfallCli(
     }
   }
 
+  if (command === 'scorecard') {
+    const isRemote = rest.includes('--remote');
+    const asJson = rest.includes('--json');
+    const showDetails = rest.includes('--details') || rest.includes('--show-details');
+    const checksIdx = rest.indexOf('--checks');
+    const rawChecks = checksIdx >= 0 ? rest[checksIdx + 1] : undefined;
+    const checks = rawChecks
+      ? rawChecks
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean)
+      : undefined;
+    const targetArg =
+      rest.find((token, idx) => !token.startsWith('--') && idx !== checksIdx + 1) ?? '.';
+
+    const svc = new ScorecardService({
+      preferDaemon: true,
+      offlineByDefault: !isRemote,
+    });
+    try {
+      const resolvedLocal = !isRemote ? path.resolve(cwd, targetArg) : undefined;
+      const repoLabel = isRemote
+        ? targetArg
+        : path.basename(resolvedLocal!) || targetArg;
+      const report = await svc.scanRepository({
+        repository: repoLabel,
+        targetType: isRemote ? 'remote' : 'local',
+        localPath: resolvedLocal,
+        remoteRepo: isRemote ? targetArg : undefined,
+        checks,
+        offline: !isRemote,
+      });
+
+      return {
+        exitCode: 0,
+        stdout: asJson
+          ? JSON.stringify(report, null, 2)
+          : formatScorecardReportTable(report, { showDetails }),
+        stderr: '',
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: `Nightfall Scorecard evaluation failed: ${msg}`,
+      };
+    } finally {
+      await svc.dispose();
+    }
+  }
+
   if (command === 'status') {
     const ownOrchestrator = !options?.orchestrator;
     const orchestrator =
@@ -170,6 +227,14 @@ export async function runNightfallCli(
       const liteboxLabel = state.sandboxToolchain.available
         ? `Microsoft LiteBox (ready · ${state.sandboxToolchain.southPlatform})`
         : 'process-confined fallback';
+      const scorecardLabel = state.scorecardToolchain.available
+        ? `Nightfall Scorecard (${state.scorecardToolchain.version ?? 'ready'} · ${state.scorecardToolchain.serviceMode})`
+        : 'unavailable';
+      const avgPosture =
+        state.overview.averageScorecardScore !== null &&
+        state.overview.averageScorecardScore !== undefined
+          ? `${state.overview.averageScorecardScore.toFixed(1)} / 10.0 (${state.overview.evaluatedScorecardReposCount ?? 0} repos)`
+          : 'not evaluated';
 
       const stdout = [
         'Nightfall Platform Status',
@@ -177,8 +242,10 @@ export async function runNightfallCli(
         `  Fixed Findings    : ${state.overview.fixedFindingsCount}`,
         `  Proposed Fixes    : ${state.overview.proposedFixesCount}`,
         `  Repositories      : ${state.repositories.filter((r) => r.prReviewsEnabled).length}/${state.repositories.length} monitored`,
+        `  Avg Posture Score : ${avgPosture}`,
         `  Active Campaign   : ${activeCampaign ? `${activeCampaign.name} (${activeCampaign.status})` : 'none'}`,
         `  Sandbox Backend   : ${liteboxLabel}`,
+        `  Scorecard Engine  : ${scorecardLabel}`,
         `  Safety Monitor    : ${state.safetyMonitor.message}`,
         `  Kill-Switch       : ${state.killSwitchEngaged ? 'ENGAGED' : 'nominal (disengaged)'}`,
       ].join('\n');

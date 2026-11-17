@@ -61,10 +61,19 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
+      - name: Setup Go toolchain for vendored Nightfall Scorecard
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'vendor/scorecard/go.mod'
+          cache-dependency-path: 'vendor/scorecard/go.sum'
+
       - name: Install workspace dependencies
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
         run: pnpm install --no-frozen-lockfile
+
+      - name: Build vendored Nightfall Scorecard Go engine
+        run: pnpm build:scorecard
 
       - name: Generate desktop icon & DMG assets
         run: node scripts/generate-desktop-icons.mjs
@@ -102,6 +111,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
+      - name: Setup Go toolchain for vendored Nightfall Scorecard
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'vendor/scorecard/go.mod'
+          cache-dependency-path: 'vendor/scorecard/go.sum'
+
       - name: Cache Electron & electron-builder downloads
         uses: actions/cache@v4
         with:
@@ -114,6 +129,15 @@ jobs:
 
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
+
+      - name: Stage vendored Nightfall Scorecard binary for macOS (${{ matrix.arch }})
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.arch == 'x64' && 'amd64' || matrix.arch }}
+          NIGHTFALL_STAGE_DESKTOP_TOOLS: '1'
+          NIGHTFALL_TARGET_OS: darwin
+          NIGHTFALL_TARGET_ARCH: ${{ matrix.arch }}
+        run: bash infra/scorecard/build-scorecard.sh
 
       - name: Build & package Debug Electron .dmg (${{ matrix.arch }})
         env:
@@ -173,6 +197,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
+      - name: Setup Go toolchain for vendored Nightfall Scorecard
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'vendor/scorecard/go.mod'
+          cache-dependency-path: 'vendor/scorecard/go.sum'
+
       - name: Ensure WiX Toolset v3 is on PATH for electron-builder MSI packaging
         shell: pwsh
         run: |
@@ -211,6 +241,16 @@ jobs:
 
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
+
+      - name: Stage vendored Nightfall Scorecard binary for Windows (${{ matrix.arch }})
+        shell: bash
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          NIGHTFALL_STAGE_DESKTOP_TOOLS: '1'
+          NIGHTFALL_TARGET_OS: win32
+          NIGHTFALL_TARGET_ARCH: ${{ matrix.arch }}
+        run: bash infra/scorecard/build-scorecard.sh
 
       - name: Build & package Debug Electron .msi (${{ matrix.arch }})
         shell: pwsh

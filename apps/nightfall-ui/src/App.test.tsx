@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', () => {
-  it('renders Nightfall shell, Defense Factory drawers, Microsoft LiteBox status, and Red Team views against real HTTP endpoints with zero mock fallbacks', async () => {
+  it('renders Nightfall shell, Defense Factory drawers, Scorecard posture & check inspector, Microsoft LiteBox status, and Red Team views against real HTTP endpoints', async () => {
     testServer = await startContractValidatedTestServer({ failFirstBootstrap: true });
     setNightfallApiBaseUrl(testServer.baseUrl);
 
@@ -73,21 +73,45 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
     });
     fireEvent.click(document.querySelector('#btn-close-fix-drawer')!);
 
-    // 4. Overview, Repositories, Settings (Microsoft LiteBox), and Local New Scan passing localPath
+    // 4. Overview, Repositories (with Scorecard pill), Scorecard screen + check inspector + live scan, and Settings
     fireEvent.click(document.querySelector('#nav-btn-overview')!);
     await waitFor(() => expect(screen.getByText('Proposed fixes')).toBeTruthy());
 
     fireEvent.click(document.querySelector('#nav-btn-repositories')!);
     await waitFor(() => expect(screen.getByText('PR review coverage')).toBeTruthy());
+    expect(document.querySelector('#btn-repo-scorecard-northstar-docs')).toBeTruthy();
+
+    fireEvent.click(document.querySelector('#nav-btn-scorecard')!);
+    await waitFor(() => {
+      expect(document.querySelector('#scorecard-posture-meter')).toBeTruthy();
+      expect(screen.getByText('Dangerous-Workflow')).toBeTruthy();
+      expect(screen.getByText('Token-Permissions')).toBeTruthy();
+    });
+    fireEvent.click(document.querySelector('#btn-inspect-check-Dangerous-Workflow')!);
+    await waitFor(() => {
+      expect(screen.getByText('PROBE EVIDENCE (1)')).toBeTruthy();
+      expect(screen.getByText('SUGGESTED REMEDIATION DIFF')).toBeTruthy();
+    });
+    fireEvent.click(document.querySelector('#btn-close-scorecard-check-drawer')!);
+
+    fireEvent.click(document.querySelector('#btn-run-scorecard-scan')!);
+    await waitFor(() => {
+      expect(testServer?.capturedScorecardScans.length).toBe(1);
+      expect(testServer?.capturedScorecardScans[0]?.repository).toBe('northstar-docs');
+    });
 
     fireEvent.click(document.querySelector('#nav-btn-settings')!);
     await waitFor(() => {
       expect(screen.getByText('Microsoft LiteBox Library OS Sandbox')).toBeTruthy();
-      expect(screen.getByText('litebox_shim_linux')).toBeTruthy();
+      expect(screen.getByText('Nightfall Scorecard Supply-Chain Engine')).toBeTruthy();
+      expect(screen.getByText('daemon-http')).toBeTruthy();
     });
 
     fireEvent.click(document.querySelector('#nav-btn-new-scan')!);
-    await waitFor(() => expect(screen.getByText('Scan method')).toBeTruthy());
+    await waitFor(() => {
+      expect(screen.getByText('Scan method')).toBeTruthy();
+      expect(screen.getByText('Supply-chain & Scorecard posture')).toBeTruthy();
+    });
     fireEvent.click(document.querySelector('#btn-scan-mode-local')!);
     fireEvent.click(document.querySelector('#btn-submit-start-scan')!);
     await waitFor(() => {
@@ -108,5 +132,6 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
     });
     fireEvent.click(document.querySelector('#top-tab-campaign-yaml')!);
     await waitFor(() => expect(screen.getByText('Download v5 YAML')).toBeTruthy());
+    expect(container.innerHTML).not.toContain('NaN');
   });
 });

@@ -27,6 +27,9 @@ import {
   PromptInputTextarea,
   RedTeamCampaignBadge,
   SankeyDiagram,
+  ScorecardPostureIcon,
+  ScorecardPostureMeter,
+  ScorecardScorePill,
   SearchIcon,
   SegmentedControl,
   SeverityBadge,
@@ -122,6 +125,22 @@ function InteractiveKitHarness(): React.ReactElement {
         <DailyTrendChart data={[]} />
         <CampaignActivityTimeline series={[]} />
         <BudgetSignalBars pct={84} />
+        <ScorecardPostureIcon size={16} />
+        <ScorecardScorePill score={8.4} />
+        <ScorecardScorePill score={-1} />
+        <ScorecardScorePill score={Number.NaN} />
+        <ScorecardPostureMeter
+          repository="auth-gateway"
+          aggregateScore={-1}
+          riskSummary={{
+            criticalFailing: 1,
+            highFailing: 0,
+            mediumFailing: 0,
+            lowFailing: 0,
+            passingChecks: 3,
+            inconclusiveChecks: 1,
+          }}
+        />
         <UnifiedDiffViewer
           filePath="src/export.ts"
           unifiedDiff={'--- a/src/export.ts\n+++ b/src/export.ts\n@@ -1,2 +1,2 @@\n-allowAll()\n+enforceWorkspaceAcl()'}

@@ -13,13 +13,14 @@ export default defineConfig({
       '@nightfall/ui-kit': path.resolve(__dirname, 'packages/ui-kit/src/index.ts'),
       '@nightfall/red-team': path.resolve(__dirname, 'services/red-team/src/index.ts'),
       '@nightfall/defense-factory': path.resolve(__dirname, 'services/defense-factory/src/index.ts'),
+      '@nightfall/scorecard': path.resolve(__dirname, 'services/scorecard/src/index.ts'),
       '@nightfall/closed-loop-orchestrator': path.resolve(__dirname, 'services/closed-loop-orchestrator/src/index.ts'),
       '@nightfall/api-gateway': path.resolve(__dirname, 'services/api-gateway/src/index.ts'),
     },
   },
   test: {
     include: [
-      'packages/**/*.test.ts',
+      'packages/**/*.test.{ts,tsx}',
       'services/**/*.test.ts',
       'apps/**/*.test.{ts,tsx}',
       'benchmarks/**/*.test.ts',

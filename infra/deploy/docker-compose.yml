@@ -10,6 +10,7 @@ services:
       - nightfall_data:/sandbox/.local/share/nightfall
     environment:
       - NIGHTFALL_LITEBOX_BIN_DIR=/opt/nightfall/litebox/bin
+      - NIGHTFALL_SCORECARD_BIN_DIR=/opt/nightfall/scorecard/bin
       - NIGHTFALL_SQLITE_PATH=/sandbox/.local/share/nightfall/nightfall.sqlite
     command: ["npx", "tsx", "services/api-gateway/src/server.ts"]
     ports:

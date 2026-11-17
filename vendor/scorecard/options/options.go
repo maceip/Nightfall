@@ -1,0 +1,366 @@
+// Copyright 2020 OpenSSF Scorecard Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package options implements Scorecard options.
+package options
+
+import (
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+
+	"github.com/caarlos0/env/v6"
+
+	"github.com/ossf/scorecard/v5/clients"
+	"github.com/ossf/scorecard/v5/internal/conformance/catalog"
+	sclog "github.com/ossf/scorecard/v5/log"
+)
+
+// Options define common options for configuring scorecard.
+type Options struct {
+	Repo            string
+	Repos           []string
+	Org             string
+	Local           string
+	Commit          string
+	LogLevel        string
+	Format          string
+	NPM             string
+	PyPI            string
+	RubyGems        string
+	Nuget           string
+	PolicyFile      string
+	ResultsFile     string
+	FileMode        string
+	Catalog         string
+	Profile         string
+	ChecksToRun     []string
+	ProbesToRun     []string
+	Metadata        []string
+	CommitDepth     int
+	ShowDetails     bool
+	ShowAnnotations bool
+	// Feature flags.
+	EnableSarif                 bool `env:"ENABLE_SARIF"`
+	EnableScorecardV6           bool `env:"SCORECARD_V6"`
+	EnableScorecardExperimental bool `env:"SCORECARD_EXPERIMENTAL"`
+}
+
+// New creates a new instance of `Options`.
+func New() *Options {
+	opts := &Options{
+		Commit:   DefaultCommit,
+		Format:   FormatDefault,
+		LogLevel: DefaultLogLevel,
+		FileMode: FileModeArchive,
+	}
+	if err := env.Parse(opts); err != nil {
+		log.Printf("could not parse env vars, using default options: %v", err)
+	}
+	return opts
+}
+
+const (
+	// DefaultCommit specifies the default commit reference to use.
+	DefaultCommit = clients.HeadSHA
+
+	// Formats.
+	// FormatJSON specifies that results should be output in JSON format.
+	FormatJSON = "json"
+	// FormatNightfall specifies Nightfall's fused JSON report combining check scores, docs, and structured findings.
+	FormatNightfall = "nightfall"
+	// FormatProbe specifies that results should be output in probe JSON format.
+	FormatProbe = "probe"
+	// FormatSarif specifies that results should be output in SARIF format.
+	FormatSarif = "sarif"
+	// FormatDefault specifies that results should be output in default format.
+	FormatDefault = "default"
+	// FormatRaw specifies that results should be output in raw format.
+	FormatRaw = "raw"
+	// FormatInToto specifies that results should be output in an in-toto statement.
+	FormatInToto = "intoto"
+	// FormatGemara specifies that conformance results should be output as a
+	// Gemara Evaluation Log. It is valid only with --catalog.
+	FormatGemara = "gemara"
+
+	// File Modes
+	// FileModeGit specifies that files should be fetched using git.
+	FileModeGit = "git"
+	// FileModeArchive specifies that files should be fetched using the export archive (tarball).
+	FileModeArchive = "archive"
+
+	// Environment variables.
+	// EnvVarEnableSarif is the environment variable which controls enabling
+	// SARIF logging.
+	EnvVarEnableSarif = "ENABLE_SARIF"
+	// EnvVarScorecardV6 is the environment variable which enables scorecard v6
+	// options.
+	EnvVarScorecardV6 = "SCORECARD_V6"
+	// EnvVarScorecardExperimental is the environment variable which enables experimental
+	// features.
+	EnvVarScorecardExperimental = "SCORECARD_EXPERIMENTAL"
+)
+
+var (
+	// DefaultLogLevel retrieves the default log level.
+	DefaultLogLevel = sclog.DefaultLevel.String()
+
+	errCommitIsEmpty          = errors.New("commit should be non-empty")
+	errFormatNotSupported     = errors.New("unsupported format")
+	errFileModeNotSupported   = errors.New("unsupported file mode")
+	errPolicyFileNotSupported = errors.New("policy file is not supported yet")
+	errRawOptionNotSupported  = errors.New("raw option is not supported yet")
+	errRepoOptionMustBeSet    = errors.New(
+		"exactly one of `repo`, `repos`, `org`, `npm`, `pypi`, `rubygems`, `nuget` or `local` must be set",
+	)
+	errSARIFNotSupported = errors.New("SARIF format is not supported yet")
+	errValidate          = errors.New("some options could not be validated")
+
+	errGemaraRequiresCatalog  = errors.New("`--format=gemara` requires `--catalog`")
+	errProfileRequiresCatalog = errors.New("`--profile` requires `--catalog`")
+	errProfileRequired        = errors.New("`--profile` is required with `--catalog`")
+	errUnsupportedProfile     = errors.New("unsupported profile")
+	errCatalogRequiresFormat  = errors.New("`--catalog` requires `--format=json` or `--format=gemara`")
+	errChecksWithCatalog      = errors.New("`--checks` cannot be used with `--catalog`")
+	errProbesWithCatalog      = errors.New("`--probes` cannot be used with `--catalog`")
+	errPolicyWithCatalog      = errors.New("`--policy` cannot be used with `--catalog`")
+	errReposWithCatalog       = errors.New("`--repos` cannot be used with `--catalog`")
+	errOrgWithCatalog         = errors.New("`--org` cannot be used with `--catalog`")
+	// The mapped requirements need branch protection data, which Scorecard
+	// can't collect for a local directory or a commit other than HEAD.
+	errLocalWithCatalog = errors.New(
+		"`--local` cannot be used with `--catalog`: branch protection settings are not available " +
+			"for a local directory")
+	errCommitWithCatalog = errors.New(
+		"`--commit` cannot be used with `--catalog`: branch protection settings are available only " +
+			"for HEAD")
+)
+
+// Validate validates scorecard configuration options.
+// TODO(options): Cleanup error messages.
+func (o *Options) Validate() error {
+	var errs []error
+
+	// Validate exactly one of `--repo`, `--repos`, `--org`, `--npm`, `--pypi`, `--rubygems`,
+	// `--nuget`, `--local` is enabled.
+	if boolSum(o.Repo != "",
+		len(o.Repos) > 0,
+		o.Org != "",
+		o.NPM != "",
+		o.PyPI != "",
+		o.RubyGems != "",
+		o.Nuget != "",
+		o.Local != "") != 1 {
+		errs = append(
+			errs,
+			errRepoOptionMustBeSet,
+		)
+	}
+
+	// Validate SARIF features are flag-guarded.
+	if !o.isSarifEnabled() {
+		if o.Format == FormatSarif {
+			errs = append(
+				errs,
+				errSARIFNotSupported,
+			)
+		}
+		if o.PolicyFile != "" {
+			errs = append(
+				errs,
+				errPolicyFileNotSupported,
+			)
+		}
+	}
+
+	// Validate V6 features are flag-guarded.
+	if !o.isV6Enabled() {
+		if o.Format == FormatRaw {
+			errs = append(
+				errs,
+				errRawOptionNotSupported,
+			)
+		}
+	}
+
+	// Validate format.
+	if !validateFormat(o.Format) {
+		errs = append(
+			errs,
+			errFormatNotSupported,
+		)
+	}
+
+	// Validate `commit` is non-empty.
+	if o.Commit == "" {
+		errs = append(
+			errs,
+			errCommitIsEmpty,
+		)
+	}
+
+	if !validateFileMode(o.FileMode) {
+		errs = append(
+			errs,
+			errFileModeNotSupported,
+		)
+	}
+
+	errs = append(errs, o.validateConformance()...)
+
+	if len(errs) != 0 {
+		return fmt.Errorf(
+			"%w: %+v",
+			errValidate,
+			errs,
+		)
+	}
+	return nil
+}
+
+// IsConformanceMode reports whether --catalog selects conformance mode.
+func (o *Options) IsConformanceMode() bool {
+	return o.Catalog != ""
+}
+
+// validateConformance checks the conformance mode options and their
+// conflicts with other options.
+func (o *Options) validateConformance() []error {
+	var errs []error
+	if !o.IsConformanceMode() {
+		if o.Profile != "" {
+			errs = append(errs, errProfileRequiresCatalog)
+		}
+		if o.Format == FormatGemara {
+			errs = append(errs, errGemaraRequiresCatalog)
+		}
+		return errs
+	}
+
+	release, err := catalog.Lookup(o.Catalog)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	switch {
+	case o.Profile == "":
+		errs = append(errs, errProfileRequired)
+	case release != nil && !release.HasProfile(o.Profile):
+		errs = append(errs, fmt.Errorf("%w %q for %s %s; valid profiles: %s", errUnsupportedProfile,
+			o.Profile, release.Catalog, release.Version, strings.Join(release.Profiles, ", ")))
+	}
+
+	if o.Format != FormatJSON && o.Format != FormatGemara {
+		errs = append(errs, errCatalogRequiresFormat)
+	}
+	if len(o.ChecksToRun) > 0 {
+		errs = append(errs, errChecksWithCatalog)
+	}
+	if len(o.ProbesToRun) > 0 {
+		errs = append(errs, errProbesWithCatalog)
+	}
+	if o.PolicyFile != "" {
+		errs = append(errs, errPolicyWithCatalog)
+	}
+	if len(o.Repos) > 0 {
+		errs = append(errs, errReposWithCatalog)
+	}
+	if o.Org != "" {
+		errs = append(errs, errOrgWithCatalog)
+	}
+	if o.Local != "" {
+		errs = append(errs, errLocalWithCatalog)
+	}
+	if o.Commit != "" && !strings.EqualFold(o.Commit, DefaultCommit) {
+		errs = append(errs, errCommitWithCatalog)
+	}
+	return errs
+}
+
+func boolSum(bools ...bool) int {
+	sum := 0
+	for _, b := range bools {
+		if b {
+			sum++
+		}
+	}
+	return sum
+}
+
+// Feature flags.
+
+// GitHub integration support.
+// See https://github.com/ossf/scorecard-action/issues/1107.
+// NOTE: We don't add a field to the Option structure to simplify
+// integration. If we did, the Action would also need to be aware
+// of the integration and pass the relevant values. This
+// would add redundancy and complicate maintenance.
+func (o *Options) IsInternalGitHubIntegrationEnabled() bool {
+	return (os.Getenv("CI") == "true") &&
+		(os.Getenv("SCORECARD_INTERNAL_GITHUB_INTEGRATION") == "1") &&
+		(os.Getenv("GITHUB_EVENT_NAME") == "dynamic")
+}
+
+// Checks returns the list of checks and honours the
+// GitHub integration.
+func (o *Options) Checks() []string {
+	if o.IsInternalGitHubIntegrationEnabled() {
+		// Overwrite the list of checks.
+		s := os.Getenv("SCORECARD_INTERNAL_GITHUB_CHECKS")
+		l := strings.Split(s, ",")
+		for i := range l {
+			l[i] = strings.TrimSpace(l[i])
+		}
+		return l
+	}
+	return o.ChecksToRun
+}
+
+func (o *Options) Probes() []string {
+	return o.ProbesToRun
+}
+
+// isSarifEnabled returns true if SARIF format was specified in options or via
+// environment variable.
+func (o *Options) isSarifEnabled() bool {
+	// UPGRADEv4: remove.
+	_, enabled := os.LookupEnv(EnvVarEnableSarif)
+	return o.EnableSarif || enabled
+}
+
+// isV6Enabled returns true if v6 functionality was specified in options or via
+// environment variable.
+func (o *Options) isV6Enabled() bool {
+	_, enabled := os.LookupEnv(EnvVarScorecardV6)
+	return o.EnableScorecardV6 || enabled
+}
+
+func validateFormat(format string) bool {
+	switch format {
+	case FormatJSON, FormatNightfall, FormatProbe, FormatSarif, FormatDefault, FormatRaw, FormatInToto, FormatGemara:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateFileMode(mode string) bool {
+	switch strings.ToLower(mode) {
+	case FileModeGit, FileModeArchive:
+		return true
+	default:
+		return false
+	}
+}

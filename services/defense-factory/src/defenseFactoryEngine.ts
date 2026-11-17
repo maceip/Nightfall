@@ -151,6 +151,19 @@ export class DefenseFactoryEngine {
     isTypeScript: boolean,
     targetFileName: string,
   ): Promise<boolean> {
+    if (
+      targetFileName.endsWith('.yml') ||
+      targetFileName.endsWith('.yaml') ||
+      targetFileName === 'Dockerfile'
+    ) {
+      const yamlCheck = await this.sandboxRuntime.execInSandbox(sandboxId, 'python3', [
+        '-c',
+        'import sys; src = open(sys.argv[1], encoding="utf-8").read(); assert len(src.strip()) > 0; assert "\\t" not in src; assert (":" in src or sys.argv[1] == "Dockerfile")',
+        targetFileName,
+      ]);
+      return yamlCheck.exitCode === 0;
+    }
+
     if (isPython) {
       const pyCheck = await this.sandboxRuntime.execInSandbox(sandboxId, 'python3', [
         '-c',
@@ -195,9 +208,17 @@ export class DefenseFactoryEngine {
       throw new Error('At least one FindingRecord is required to generate a FixProposal.');
     }
 
-    const isPython = snapshot.targetFileName.endsWith('.py');
+    const isWorkflowOrContainer =
+      snapshot.targetFileName.endsWith('.yml') ||
+      snapshot.targetFileName.endsWith('.yaml') ||
+      snapshot.targetFileName === 'Dockerfile';
+    const isPython =
+      snapshot.targetFileName.endsWith('.py') ||
+      isWorkflowOrContainer ||
+      (snapshot.baselineTestFileName?.endsWith('.py') ?? false);
     const isTypeScript =
-      snapshot.targetFileName.endsWith('.ts') || snapshot.targetFileName.endsWith('.tsx');
+      !isPython &&
+      (snapshot.targetFileName.endsWith('.ts') || snapshot.targetFileName.endsWith('.tsx'));
 
     const baselineTestFile =
       snapshot.baselineTestFileName ??
@@ -447,7 +468,9 @@ export class DefenseFactoryEngine {
         options?.snapshotLabel ??
         (primary.sources.includes('red-team')
           ? 'Nightfall · Red Team handoff'
-          : 'Nightfall · Cloud snapshot'),
+          : primary.sources.includes('scorecard')
+            ? 'Nightfall · Scorecard handoff'
+            : 'Nightfall · Cloud snapshot'),
       findingIds: findings.map((f) => f.id),
       severity: primary.severity,
       status: allGatesPassed ? 'proposed' : 'suppressed',

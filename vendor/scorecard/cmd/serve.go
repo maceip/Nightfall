@@ -1,0 +1,499 @@
+// Copyright 2025 OpenSSF Scorecard Authors & Nightfall Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	stdlog "log"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/signal"
+	"sort"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/spf13/cobra"
+	"sigs.k8s.io/release-utils/version"
+
+	"github.com/ossf/scorecard/v5/checker"
+	"github.com/ossf/scorecard/v5/clients"
+	"github.com/ossf/scorecard/v5/clients/localdir"
+	pmc "github.com/ossf/scorecard/v5/cmd/internal/packagemanager"
+	docs "github.com/ossf/scorecard/v5/docs/checks"
+	"github.com/ossf/scorecard/v5/log"
+	"github.com/ossf/scorecard/v5/options"
+	"github.com/ossf/scorecard/v5/pkg/scorecard"
+	"github.com/ossf/scorecard/v5/policy"
+)
+
+const (
+	defaultListenHost = "127.0.0.1"
+	defaultPort       = "8080"
+	// maxRequestBodyBytes caps POST bodies; a scan request is well under 1 KiB.
+	maxRequestBodyBytes = 1 << 20
+)
+
+type server struct {
+	logger *log.Logger
+}
+
+type scorecardRequest struct {
+	Repo            string   `json:"repo,omitempty"`
+	Local           string   `json:"local,omitempty"`
+	Format          string   `json:"format,omitempty"`
+	NPM             string   `json:"npm,omitempty"`
+	PyPI            string   `json:"pypi,omitempty"`
+	RubyGems        string   `json:"rubygems,omitempty"`
+	Nuget           string   `json:"nuget,omitempty"`
+	Commit          string   `json:"commit,omitempty"`
+	FileMode        string   `json:"file_mode,omitempty"`
+	Checks          []string `json:"checks,omitempty"`
+	Probes          []string `json:"probes,omitempty"`
+	Metadata        []string `json:"metadata,omitempty"`
+	CommitDepth     int      `json:"commit_depth,omitempty"`
+	ShowDetails     bool     `json:"show_details,omitempty"`
+	ShowAnnotations bool     `json:"show_annotations,omitempty"`
+}
+
+func newServer(logger *log.Logger) *server {
+	return &server{
+		logger: logger,
+	}
+}
+
+func compactStringSlice(items []string) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, s := range items {
+		trimmed := strings.TrimSpace(s)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	info := version.GetVersionInfo()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":       "ok",
+		"service":      "nightfall-scorecard",
+		"version":      info.GitVersion,
+		"commit":       info.GitCommit,
+		"capabilities": []string{"local", "remote", "checks", "probes", "nightfall-json", "remediation-patches"},
+	})
+}
+
+func (s *server) handleChecksCatalog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	checkDocs, err := docs.Read()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("cannot read checks catalog: %v", err), http.StatusInternalServerError)
+		return
+	}
+	info := version.GetVersionInfo()
+	catalog := scorecard.BuildNightfallCheckCatalog(checkDocs, info.GitCommit)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"service": "nightfall-scorecard",
+		"checks":  catalog,
+	})
+}
+
+func (s *server) handleScorecard(w http.ResponseWriter, r *http.Request, defaultFormat string) {
+	var req scorecardRequest
+	if r.Method == http.MethodPost {
+		body := http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		err := json.NewDecoder(body).Decode(&req)
+		if err == nil {
+			// The decoder stops after the first JSON value; read the rest so an
+			// oversized body is rejected even when it starts with valid JSON.
+			_, err = io.Copy(io.Discard, body)
+		}
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		if err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+	} else {
+		req.Repo = r.URL.Query().Get("repo")
+		req.Local = r.URL.Query().Get("local")
+		req.Format = r.URL.Query().Get("format")
+		req.NPM = r.URL.Query().Get("npm")
+		req.PyPI = r.URL.Query().Get("pypi")
+		req.RubyGems = r.URL.Query().Get("rubygems")
+		req.Nuget = r.URL.Query().Get("nuget")
+		req.Checks = strings.Split(r.URL.Query().Get("checks"), ",")
+		req.Commit = r.URL.Query().Get("commit")
+		req.ShowDetails = r.URL.Query().Get("show_details") == "true"
+		req.ShowAnnotations = r.URL.Query().Get("show_annotations") == "true"
+		req.Probes = strings.Split(r.URL.Query().Get("probes"), ",")
+		req.FileMode = r.URL.Query().Get("file_mode")
+	}
+
+	opts := options.New()
+	opts.Repo = strings.TrimSpace(req.Repo)
+	opts.Local = strings.TrimSpace(req.Local)
+	opts.NPM = strings.TrimSpace(req.NPM)
+	opts.PyPI = strings.TrimSpace(req.PyPI)
+	opts.RubyGems = strings.TrimSpace(req.RubyGems)
+	opts.Nuget = strings.TrimSpace(req.Nuget)
+	opts.Commit = strings.TrimSpace(req.Commit)
+	if opts.Commit == "" {
+		opts.Commit = clients.HeadSHA
+	}
+	opts.CommitDepth = req.CommitDepth
+	opts.ShowDetails = req.ShowDetails
+	opts.ShowAnnotations = req.ShowAnnotations
+	opts.LogLevel = "info"
+	opts.FileMode = strings.TrimSpace(req.FileMode)
+	if opts.FileMode == "" {
+		opts.FileMode = options.FileModeArchive
+	}
+	opts.Format = strings.TrimSpace(req.Format)
+	if opts.Format == "" {
+		opts.Format = defaultFormat
+	}
+	opts.ChecksToRun = compactStringSlice(req.Checks)
+	opts.ProbesToRun = compactStringSlice(req.Probes)
+	opts.Metadata = compactStringSlice(req.Metadata)
+
+	if err := opts.Validate(); err != nil {
+		http.Error(w, fmt.Sprintf("invalid options: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if opts.Local == "" {
+		p := &pmc.PackageManagerClient{}
+		pkgResp, err := fetchGitRepositoryFromPackageManagers(opts.NPM, opts.PyPI, opts.RubyGems, opts.Nuget, p)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("fetchGitRepositoryFromPackageManagers: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if pkgResp.exists {
+			opts.Repo = pkgResp.associatedRepo
+		}
+	}
+
+	ctx := r.Context()
+
+	var repo clients.Repo
+	var err error
+	if opts.Local != "" {
+		repo, err = localdir.MakeLocalDirRepo(opts.Local)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("making local repo: %v", err), http.StatusBadRequest)
+			return
+		}
+	} else {
+		repo, err = makeRepo(opts.Repo)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("making remote repo: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	checkDocs, err := docs.Read()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("cannot read yaml file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var requiredRequestTypes []checker.RequestType
+	if opts.Local != "" {
+		requiredRequestTypes = append(requiredRequestTypes, checker.FileBased)
+	}
+	if !strings.EqualFold(opts.Commit, clients.HeadSHA) {
+		requiredRequestTypes = append(requiredRequestTypes, checker.CommitBased)
+	}
+	enabledChecks, err := policy.GetEnabled(nil, opts.Checks(), requiredRequestTypes, repo.Type())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("GetEnabled: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	checks := make([]string, 0, len(enabledChecks))
+	for c := range enabledChecks {
+		checks = append(checks, c)
+	}
+
+	enabledProbes := opts.Probes()
+	info := version.GetVersionInfo()
+	osvConfig := clients.OSVConfig{
+		UserAgent: fmt.Sprintf("nightfall-scorecard/%s", info.GitVersion),
+	}
+
+	scorecardOpts := []scorecard.Option{
+		scorecard.WithLogLevel(log.ParseLevel(opts.LogLevel)),
+		scorecard.WithCommitSHA(opts.Commit),
+		scorecard.WithCommitDepth(opts.CommitDepth),
+		scorecard.WithProbes(enabledProbes),
+		scorecard.WithChecks(checks),
+		scorecard.WithVulnerabilitiesClient(clients.NewOSVClient(&osvConfig)),
+	}
+
+	if strings.EqualFold(opts.FileMode, options.FileModeGit) {
+		scorecardOpts = append(scorecardOpts, scorecard.WithFileModeGit())
+	}
+
+	repoResult, err := scorecard.Run(ctx, repo, scorecardOpts...)
+	if err != nil {
+		s.logger.Error(err, "scorecard.Run")
+		http.Error(w, fmt.Sprintf("scorecard.Run: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	repoResult.Metadata = append(repoResult.Metadata, opts.Metadata...)
+
+	sort.Slice(repoResult.Checks, func(i, j int) bool {
+		return repoResult.Checks[i].Name < repoResult.Checks[j].Name
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	switch opts.Format {
+	case options.FormatNightfall:
+		err = repoResult.AsNightfallJSON(w, checkDocs, &scorecard.AsJSON2ResultOption{
+			LogLevel:    log.ParseLevel(opts.LogLevel),
+			Details:     true,
+			Annotations: true,
+		})
+	case options.FormatProbe:
+		err = repoResult.AsProbe(w, nil)
+	default:
+		err = repoResult.AsJSON2(w, checkDocs, &scorecard.AsJSON2ResultOption{
+			LogLevel:    log.ParseLevel(opts.LogLevel),
+			Details:     opts.ShowDetails,
+			Annotations: opts.ShowAnnotations,
+		})
+	}
+	if err != nil {
+		s.logger.Error(err, "writing JSON response")
+		http.Error(w, fmt.Sprintf("failed to format results: %v", err), http.StatusInternalServerError)
+		return
+	}
+}
+
+// isCrossOrigin applies the rule of http.CrossOriginProtection to every
+// method. The standard library exempts GET, but a GET here starts a scan.
+func isCrossOrigin(r *http.Request) bool {
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "same-origin", "none":
+		return false
+	case "":
+		// Older browsers send only Origin; non-browser clients send neither.
+	default:
+		return true
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return false
+	}
+	o, err := url.Parse(origin)
+	return err != nil || o.Host != r.Host
+}
+
+func crossOriginMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isCrossOrigin(r) {
+			http.Error(w, "cross-origin request rejected", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isLoopback reports whether host is localhost or a loopback IP address.
+func isLoopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// loopbackHostMiddleware rejects requests that name a non-loopback host, so
+// a name that resolves to a loopback address can't reach the server.
+func loopbackHostMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if !isLoopback(strings.Trim(host, "[]")) {
+			http.Error(w, "host not allowed", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// listenAddress returns the host and the address to listen on. listen is a
+// host or a host:port; the port defaults to port, then to 8080.
+func listenAddress(listen, port string) (host, addr string) {
+	if port == "" {
+		port = defaultPort
+	}
+	host = defaultListenHost
+	if listen != "" {
+		var p string
+		var err error
+		host, p, err = net.SplitHostPort(listen)
+		if err != nil {
+			host = strings.Trim(listen, "[]")
+		} else if p != "" {
+			port = p
+		}
+	}
+	return host, net.JoinHostPort(host, port)
+}
+
+func newHandler(srv *server, loopback bool) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method == http.MethodGet || r.Method == http.MethodPost {
+			srv.handleScorecard(w, r, options.FormatJSON)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	mux.HandleFunc("/scan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodPost {
+			srv.handleScorecard(w, r, options.FormatNightfall)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	mux.HandleFunc("/api/v1/scan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodPost {
+			srv.handleScorecard(w, r, options.FormatNightfall)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
+	mux.HandleFunc("/checks", srv.handleChecksCatalog)
+	mux.HandleFunc("/health", srv.handleHealth)
+
+	handler := crossOriginMiddleware(mux)
+	if loopback {
+		handler = loopbackHostMiddleware(handler)
+	}
+	return loggerMiddleware(recoverMiddleware(handler))
+}
+
+func recoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				stdlog.Printf("panic: %v", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func loggerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		stdlog.Printf("request completed method=%s path=%s duration=%v", r.Method, r.URL.Path, time.Since(start))
+	})
+}
+
+func serveCmd(o *options.Options) *cobra.Command {
+	var listen string
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Serve the Nightfall Scorecard HTTP daemon",
+		Long: `Start a loopback HTTP daemon to execute Nightfall Scorecard checks against local workspaces or remote repositories.
+
+Listens on 127.0.0.1 by default (supports --listen 127.0.0.1:0 for ephemeral port allocation).`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.SilenceUsage = true
+			logger := log.NewLogger(log.ParseLevel(o.LogLevel))
+			srv := newServer(logger)
+
+			host, addr := listenAddress(listen, os.Getenv("PORT"))
+			loopback := isLoopback(host)
+
+			httpServer := &http.Server{
+				Handler:           newHandler(srv, loopback),
+				ReadHeaderTimeout: 10 * time.Second,
+			}
+
+			var lc net.ListenConfig
+			ln, err := lc.Listen(cmd.Context(), "tcp", addr)
+			if err != nil {
+				return fmt.Errorf("listening on %s: %w", addr, err)
+			}
+
+			boundAddr := ln.Addr().String()
+			fmt.Fprintf(os.Stdout, "NIGHTFALL_SCORECARD_LISTENING=http://%s\n", boundAddr)
+
+			done := make(chan os.Signal, 1)
+			signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+			logger.Info("Nightfall Scorecard daemon listening on " + boundAddr)
+			if !loopback {
+				logger.Info("Server has no authentication and is reachable from other hosts")
+			}
+			go func() {
+				if err := httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					logger.Error(err, "server error")
+				}
+			}()
+
+			<-done
+			logger.Info("Shutting down Nightfall Scorecard daemon...")
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			if err := httpServer.Shutdown(ctx); err != nil {
+				return fmt.Errorf("server shutdown: %w", err)
+			}
+
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&listen, "listen", "",
+		"host or host:port to listen on (default 127.0.0.1; port from PORT, then 8080)")
+	return cmd
+}

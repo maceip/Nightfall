@@ -10,6 +10,7 @@ import {
   NightfallHorizonIcon,
   RedTeamSparkIcon,
   SankeyDiagram,
+  ScorecardPostureIcon,
   SearchIcon,
   SeverityBadge,
   StatusBadge,
@@ -109,6 +110,7 @@ export function FindingsScreen({
         <span className="inline-flex items-center gap-1.5 text-ink">
           <NightfallHorizonIcon size={16} />
           {f.sources.includes('red-team') ? <RedTeamSparkIcon size={14} /> : null}
+          {f.sources.includes('scorecard') ? <ScorecardPostureIcon size={15} /> : null}
         </span>
       ),
     },

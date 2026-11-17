@@ -15,11 +15,9 @@ import { NewScanDrawer } from './screens/defense-factory/new-scan-drawer.js';
 import { OverviewScreen } from './screens/defense-factory/overview-screen.js';
 import { RepositoriesScreen } from './screens/defense-factory/repositories-screen.js';
 import { ScansAuditScreen } from './screens/defense-factory/scans-audit-screen.js';
+import { ScorecardScreen } from './screens/defense-factory/scorecard-screen.js';
 import { SettingsScreen } from './screens/defense-factory/settings-screen.js';
-import { CampaignYamlScreen } from './screens/red-team/campaign-yaml-screen.js';
-import { ComposerScreen } from './screens/red-team/composer-screen.js';
-import { FindingReportScreen } from './screens/red-team/finding-report-screen.js';
-import { LiveCampaignScreen } from './screens/red-team/live-campaign-screen.js';
+import { RedTeamStageSwitch } from './screens/red-team/red-team-stage-switch.js';
 
 export type { PrimarySection, RedTeamStage };
 
@@ -81,7 +79,7 @@ export function App(): React.ReactElement {
 
   async function handleNewScan(req: NewScanRequest): Promise<void> {
     await ws.submitNewScan(req);
-    navigateTo('scans');
+    navigateTo(req.method === 'scorecard_scan' ? 'scorecard' : 'scans');
   }
 
   const proposedCount = data.fixes.filter((f) => f.status === 'proposed').length;
@@ -103,6 +101,7 @@ export function App(): React.ReactElement {
         killSwitchEngaged={data.killSwitchEngaged}
         proposedFixesCount={proposedCount}
         openFindingsCount={data.overview.openFindingsCount}
+        averageScorecardScore={data.overview.averageScorecardScore}
         selectedRepo={selectedRepo}
         repositories={data.repositories}
         activeFinding={activeFinding}
@@ -182,6 +181,24 @@ export function App(): React.ReactElement {
                 onQuickScanRepo={(repoName) =>
                   handleNewScan({ mode: 'cloud', repository: repoName, method: 'repository_scan', scope: 'full_repository' })
                 }
+                onOpenRepoScorecard={(repoName) => {
+                  setSelectedRepo(repoName);
+                  navigateTo('scorecard');
+                }}
+              />
+            ) : null}
+            {section === 'scorecard' ? (
+              <ScorecardScreen
+                reports={data.scorecardReports}
+                repositories={data.repositories}
+                findings={data.findings}
+                selectedRepo={selectedRepo}
+                onSelectRepo={setSelectedRepo}
+                onRunScorecardScan={ws.runScorecardScan}
+                onFixFinding={(finding) => {
+                  ws.setActiveFindingId(finding.id);
+                  void ws.startOrOpenFix(finding);
+                }}
               />
             ) : null}
             {section === 'scans' ? (
@@ -190,6 +207,7 @@ export function App(): React.ReactElement {
             {section === 'settings' ? (
               <SettingsScreen
                 sandboxToolchain={data.sandboxToolchain}
+                scorecardToolchain={data.scorecardToolchain}
                 models={data.models}
                 auditEntryCount={data.auditEntries.length}
                 killSwitchEngaged={data.killSwitchEngaged}
@@ -199,69 +217,45 @@ export function App(): React.ReactElement {
             ) : null}
           </div>
         ) : (
-          <>
-            {rtStage === 'composer' ? (
-              <ComposerScreen
-                models={data.models}
-                activeCampaign={activeCampaign}
-                activeFindingsCount={rtFindings.length}
-                onJumpToActiveCampaign={() => setRtStage('live-campaign')}
-                onPrepareCampaign={async (input) => {
-                  const res = await ws.prepareCampaignApi(input);
-                  ws.setData((p) => (p ? { ...p, campaigns: [res.campaign, ...p.campaigns.filter((c) => c.id !== res.campaign.id)] } : p));
-                  ws.setActiveCampaignId(res.campaign.id);
-                  ws.setYamlDraft(res.campaign.yamlText);
-                  setRtStage('yaml-builder');
-                }}
-              />
-            ) : null}
-            {rtStage === 'yaml-builder' && activeCampaign ? (
-              <CampaignYamlScreen
-                campaign={activeCampaign}
-                yamlDraft={ws.yamlDraft || activeCampaign.yamlText}
-                onChangeYaml={ws.setYamlDraft}
-                onLaunchCampaign={async () => {
-                  const res = await ws.launchCampaignApi(activeCampaign.id, ws.yamlDraft || activeCampaign.yamlText);
-                  ws.setData((p) => (p ? { ...p, campaigns: p.campaigns.map((c) => (c.id === activeCampaign.id ? res.campaign : c)) } : p));
-                  setRtStage('live-campaign');
-                }}
-              />
-            ) : null}
-            {rtStage === 'live-campaign' && activeCampaign ? (
-              <LiveCampaignScreen
-                campaign={activeCampaign}
-                campaignFindings={rtFindings}
-                approvals={data.approvals}
-                killSwitchEngaged={data.killSwitchEngaged}
-                onOpenYamlBuilder={() => {
-                  ws.setYamlDraft(activeCampaign.yamlText);
-                  setRtStage('yaml-builder');
-                }}
-                onSelectFindingReport={(f) => {
-                  setRtReportFindingId(f.id);
-                  setRtStage('finding-report');
-                }}
-                onResolveApproval={async (approvalId, decision) => {
-                  const res = await ws.resolveApprovalApi(approvalId, decision);
-                  ws.setData((p) => (p ? { ...p, approvals: p.approvals.map((a) => (a.id === approvalId ? res.approval : a)) } : p));
-                }}
-              />
-            ) : null}
-            {rtStage === 'finding-report' && rtReportFinding ? (
-              <div className="flex-1 overflow-y-auto p-6">
-                <FindingReportScreen
-                  finding={rtReportFinding}
-                  evidence={rtReportEvidence}
-                  onBackToCampaign={() => setRtStage('live-campaign')}
-                  onPromoteToDefenseFactory={(finding) => {
-                    ws.setActiveFindingId(finding.id);
-                    navigateTo('finding-detail');
-                    void ws.startOrOpenFix(finding);
-                  }}
-                />
-              </div>
-            ) : null}
-          </>
+          <RedTeamStageSwitch
+            rtStage={rtStage}
+            models={data.models}
+            activeCampaign={activeCampaign}
+            rtFindings={rtFindings}
+            rtReportFinding={rtReportFinding}
+            rtReportEvidence={rtReportEvidence}
+            approvals={data.approvals}
+            killSwitchEngaged={data.killSwitchEngaged}
+            yamlDraft={ws.yamlDraft}
+            onChangeStage={setRtStage}
+            onChangeYaml={ws.setYamlDraft}
+            onSelectFindingReport={(f) => {
+              setRtReportFindingId(f.id);
+              setRtStage('finding-report');
+            }}
+            onPrepareCampaign={async (input) => {
+              const res = await ws.prepareCampaignApi(input);
+              ws.setData((p) => (p ? { ...p, campaigns: [res.campaign, ...p.campaigns.filter((c) => c.id !== res.campaign.id)] } : p));
+              ws.setActiveCampaignId(res.campaign.id);
+              ws.setYamlDraft(res.campaign.yamlText);
+              setRtStage('yaml-builder');
+            }}
+            onLaunchCampaign={async () => {
+              if (!activeCampaign) return;
+              const res = await ws.launchCampaignApi(activeCampaign.id, ws.yamlDraft || activeCampaign.yamlText);
+              ws.setData((p) => (p ? { ...p, campaigns: p.campaigns.map((c) => (c.id === activeCampaign.id ? res.campaign : c)) } : p));
+              setRtStage('live-campaign');
+            }}
+            onResolveApproval={async (approvalId, decision) => {
+              const res = await ws.resolveApprovalApi(approvalId, decision);
+              ws.setData((p) => (p ? { ...p, approvals: p.approvals.map((a) => (a.id === approvalId ? res.approval : a)) } : p));
+            }}
+            onPromoteToDefenseFactory={(finding) => {
+              ws.setActiveFindingId(finding.id);
+              navigateTo('finding-detail');
+              void ws.startOrOpenFix(finding);
+            }}
+          />
         )}
 
         <FixDrawer
@@ -279,6 +273,10 @@ export function App(): React.ReactElement {
                     ...p,
                     fixes: p.fixes.map((fx) => (fx.id === fixId ? res.fix : fx)),
                     findings: res.finding ? p.findings.map((f) => (f.id === res.finding!.id ? res.finding! : f)) : p.findings,
+                    repositories: res.repositories ?? p.repositories,
+                    scorecardReports: res.scorecardReport
+                      ? p.scorecardReports.map((r) => (r.repository === res.scorecardReport!.repository ? res.scorecardReport! : r))
+                      : p.scorecardReports,
                     overview: res.overview ?? p.overview,
                   }
                 : p,

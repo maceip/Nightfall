@@ -6,6 +6,7 @@ import {
   RiskTierSchema,
   SeveritySchema,
 } from './findings.js';
+import { ScorecardReportRecordSchema } from './scorecard.js';
 
 export const RepositoryRecordSchema = z.object({
   id: z.string(),
@@ -19,6 +20,10 @@ export const RepositoryRecordSchema = z.object({
   openFindingsCount: z.number().int().nonnegative(),
   localPath: z.string().optional(),
   cloneUrl: z.string().optional(),
+  scorecardScore: z.number().min(-1).max(10).nullable().optional(),
+  scorecardPassingChecks: z.number().int().nonnegative().optional(),
+  scorecardTotalChecks: z.number().int().nonnegative().optional(),
+  scorecardEvaluatedAt: z.string().nullable().optional(),
 });
 export type RepositoryRecord = z.infer<typeof RepositoryRecordSchema>;
 
@@ -27,7 +32,12 @@ export const NewScanRequestSchema = z.object({
   repository: z.string().min(1),
   localPath: z.string().optional(),
   cloneUrl: z.string().optional(),
-  method: z.enum(['repository_scan', 'continuous_monitoring', 'scheduled_scan']),
+  method: z.enum([
+    'repository_scan',
+    'continuous_monitoring',
+    'scheduled_scan',
+    'scorecard_scan',
+  ]),
   scope: z.enum(['full_repository', 'specific_paths']),
   paths: z.array(z.string()).optional(),
   scheduleCron: z.string().optional(),
@@ -52,7 +62,12 @@ export const ScanJobRecordSchema = z.object({
   id: z.string(),
   repository: z.string(),
   mode: z.enum(['cloud', 'local']),
-  method: z.enum(['repository_scan', 'continuous_monitoring', 'scheduled_scan']),
+  method: z.enum([
+    'repository_scan',
+    'continuous_monitoring',
+    'scheduled_scan',
+    'scorecard_scan',
+  ]),
   scope: z.enum(['full_repository', 'specific_paths']),
   status: z.enum(['queued', 'running', 'completed', 'failed']),
   findingsDiscovered: z.number().int().nonnegative(),
@@ -173,6 +188,8 @@ export const OverviewSummarySchema = z.object({
       newFindings: z.number().int().nonnegative(),
     }),
   ),
+  averageScorecardScore: z.number().min(0).max(10).nullable().optional(),
+  evaluatedScorecardReposCount: z.number().int().nonnegative().optional(),
 });
 export type OverviewSummary = z.infer<typeof OverviewSummarySchema>;
 
@@ -180,7 +197,14 @@ export const AuditEntrySchema = z.object({
   id: z.string(),
   index: z.number().int().nonnegative(),
   timestamp: z.string(),
-  subsystem: z.enum(['red-team', 'defense-factory', 'policy-gate', 'orchestrator', 'sandbox']),
+  subsystem: z.enum([
+    'red-team',
+    'defense-factory',
+    'policy-gate',
+    'orchestrator',
+    'sandbox',
+    'scorecard',
+  ]),
   action: z.string(),
   entityId: z.string(),
   actor: z.string(),
@@ -205,6 +229,7 @@ export const StreamEventSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('evidence.recorded'), evidence: EvidenceBundleSchema }),
   z.object({ type: z.literal('fix.updated'), fix: FixProposalSchema }),
   z.object({ type: z.literal('scan.updated'), scan: ScanJobRecordSchema }),
+  z.object({ type: z.literal('scorecard.updated'), report: ScorecardReportRecordSchema }),
   z.object({ type: z.literal('hitl.updated'), approval: HitlApprovalRequestSchema }),
   z.object({
     type: z.literal('safety.kill_switch'),

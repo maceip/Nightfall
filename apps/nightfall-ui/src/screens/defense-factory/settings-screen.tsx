@@ -1,5 +1,9 @@
 import React from 'react';
-import type { ModelDescriptor, SandboxToolchainStatus } from '@nightfall/core-contracts';
+import type {
+  ModelDescriptor,
+  SandboxToolchainStatus,
+  ScorecardToolchainStatus,
+} from '@nightfall/core-contracts';
 import {
   Badge,
   Button,
@@ -13,6 +17,7 @@ import {
 
 export type SettingsScreenProps = {
   sandboxToolchain?: SandboxToolchainStatus;
+  scorecardToolchain?: ScorecardToolchainStatus;
   models: ModelDescriptor[];
   auditEntryCount: number;
   killSwitchEngaged: boolean;
@@ -22,6 +27,7 @@ export type SettingsScreenProps = {
 
 export function SettingsScreen({
   sandboxToolchain,
+  scorecardToolchain,
   models,
   auditEntryCount,
   killSwitchEngaged,
@@ -33,6 +39,8 @@ export function SettingsScreen({
   const upstreamRepo = sandboxToolchain?.upstreamRepo ?? 'https://github.com/microsoft/litebox';
   const pinnedCommit = sandboxToolchain?.pinnedCommit ?? 'verified-pinned-tree';
   const liteboxAvailable = sandboxToolchain?.available ?? false;
+  const scAvailable = scorecardToolchain?.available ?? false;
+  const scMode = scorecardToolchain?.serviceMode ?? 'unavailable';
 
   const modelColumns: DataTableColumn<ModelDescriptor>[] = [
     {
@@ -94,6 +102,33 @@ export function SettingsScreen({
             </div>
           </div>
         ) : null}
+      </Card>
+
+      <Card className="space-y-4 p-5">
+        <SectionHeader
+          title="Nightfall Scorecard Supply-Chain Engine"
+          subtitle="Vendored & fused OSSF Scorecard Go daemon evaluating CI workflow injection, token permissions, and supply-chain checks"
+          actions={
+            <StatusBadge
+              status={scAvailable ? 'verified' : 'not_recorded'}
+              label={scAvailable ? `Scorecard ${scMode} Ready ✓` : 'Scorecard Binary Not Built'}
+            />
+          }
+        />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <ToolchainSpec label="Service Mode" value={scMode} mono />
+          <ToolchainSpec label="Vendored Tree" value={scorecardToolchain?.vendoredPath ?? 'vendor/scorecard'} mono />
+          <ToolchainSpec
+            label="Pinned Commit"
+            value={(scorecardToolchain?.pinnedCommit ?? '6eb56f6a7e62').slice(0, 12)}
+            mono
+          />
+          <ToolchainSpec
+            label="Upstream Repository"
+            value={scorecardToolchain?.upstreamRepo ?? 'https://github.com/ossf/scorecard'}
+            mono
+          />
+        </div>
       </Card>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

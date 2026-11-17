@@ -242,6 +242,18 @@ const optionalLiteBoxExtraResources = existsSync(
     ]
   : [];
 
+const optionalScorecardExtraResources = existsSync(
+  resolve(desktopPackageRoot, `bundled-tools/${targetPlatformKey}/scorecard`),
+)
+  ? [
+      {
+        from: `bundled-tools/${targetPlatformKey}/scorecard`,
+        to: 'tools/scorecard',
+        filter: ['**/*'],
+      },
+    ]
+  : [];
+
 /** @type {import('electron-builder').Configuration} */
 export default {
   appId: desktopProductIdentity.appId,
@@ -310,6 +322,7 @@ export default {
       ? [{ from: 'build/icon.ico', to: 'tray_icon.ico' }]
       : []),
     ...optionalLiteBoxExtraResources,
+    ...optionalScorecardExtraResources,
   ],
   mac: {
     target: ['dmg'],

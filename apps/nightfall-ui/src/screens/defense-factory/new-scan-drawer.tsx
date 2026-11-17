@@ -41,6 +41,11 @@ const SCAN_METHODS: Array<{
     title: 'Scheduled scan',
     subtitle: "Set a schedule to run scans across your repository's default branch.",
   },
+  {
+    value: 'scorecard_scan',
+    title: 'Supply-chain & Scorecard posture',
+    subtitle: 'Evaluate CI workflow permissions, pinned actions, binary artifacts, and supply-chain checks.',
+  },
 ];
 
 export function NewScanDrawer({

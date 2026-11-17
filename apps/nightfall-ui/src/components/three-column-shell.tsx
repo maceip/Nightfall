@@ -1,41 +1,16 @@
 import React from 'react';
 import type { FindingRecord, RepositoryRecord } from '@nightfall/core-contracts';
 import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  Badge,
-  Button,
-  CodeIcon,
-  FileCodeIcon,
-  FilterIcon,
-  FolderIcon,
-  GitBranchIcon,
-  GridIcon,
-  HistoryClockIcon,
-  HomeWorkspaceIcon,
-  MoreHorizontalIcon,
-  NightfallHorizonIcon,
-  PlusIcon,
-  RadarIcon,
-  RedTeamCampaignBadge,
-  ScanIcon,
-  SettingsIcon,
-  ShieldAlertIcon,
-  ShieldCheckIcon,
-  SidebarLeftIcon,
-  cn,
+  ArrowLeftIcon, ArrowRightIcon, Badge, Button, CodeIcon, FileCodeIcon, FilterIcon, FolderIcon,
+  GitBranchIcon, GridIcon, HistoryClockIcon, HomeWorkspaceIcon, MoreHorizontalIcon,
+  NightfallHorizonIcon, PlusIcon, RadarIcon, RedTeamCampaignBadge, ScanIcon, ScorecardPostureIcon,
+  ScorecardScorePill, SettingsIcon, ShieldAlertIcon, ShieldCheckIcon, SidebarLeftIcon, cn,
 } from '@nightfall/ui-kit';
-import { platformBridge, type WindowControlsOverlayMetrics } from '../bridge/platform-bridge';
+import { platformBridge, type WindowControlsOverlayMetrics } from '../bridge/platform-bridge.js';
 
 export type PrimarySection =
-  | 'overview'
-  | 'fixes'
-  | 'findings'
-  | 'finding-detail'
-  | 'repositories'
-  | 'scans'
-  | 'red-team'
-  | 'settings';
+  | 'overview' | 'fixes' | 'findings' | 'finding-detail'
+  | 'repositories' | 'scorecard' | 'scans' | 'red-team' | 'settings';
 
 export type RedTeamStage = 'composer' | 'yaml-builder' | 'live-campaign' | 'finding-report';
 
@@ -48,6 +23,7 @@ export type ThreeColumnShellProps = {
   killSwitchEngaged: boolean;
   proposedFixesCount: number;
   openFindingsCount: number;
+  averageScorecardScore?: number | null;
   selectedRepo: string;
   repositories: RepositoryRecord[];
   activeFinding?: FindingRecord;
@@ -68,32 +44,17 @@ const SECTION_TITLES: Record<Exclude<PrimarySection, 'red-team'>, string> = {
   findings: 'Findings',
   'finding-detail': 'Finding Detail',
   repositories: 'Repositories',
+  scorecard: 'Scorecard',
   scans: 'Scans & Audit',
   settings: 'Settings',
 };
 
 export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactElement {
   const {
-    section,
-    rtStage,
-    sidebarOpen,
-    canGoBack,
-    connectedLiveApi,
-    killSwitchEngaged,
-    proposedFixesCount,
-    openFindingsCount,
-    selectedRepo,
-    repositories,
-    activeFinding,
-    onToggleSidebar,
-    onHistoryBack,
-    onNavigate,
-    onOpenNewScan,
-    onToggleKillSwitch,
-    onChangeSelectedRepo,
-    onMarkDuplicate,
-    onContinueFix,
-    children,
+    section, rtStage, sidebarOpen, canGoBack, connectedLiveApi, killSwitchEngaged,
+    proposedFixesCount, openFindingsCount, averageScorecardScore, selectedRepo, repositories,
+    activeFinding, onToggleSidebar, onHistoryBack, onNavigate, onOpenNewScan,
+    onToggleKillSwitch, onChangeSelectedRepo, onMarkDuplicate, onContinueFix, children,
   } = props;
 
   const railButtons = [
@@ -104,6 +65,7 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
     { title: 'More', active: false, icon: <MoreHorizontalIcon size={17} /> },
     { id: 'rail-btn-nightfall', title: 'Nightfall Security', active: section !== 'red-team', icon: <NightfallHorizonIcon size={18} />, onClick: () => onNavigate('overview'), dividerBefore: true },
     { id: 'rail-btn-fixes', title: 'Defense Factory Fixes', active: section === 'fixes', icon: <GitBranchIcon size={17} />, onClick: () => onNavigate('fixes') },
+    { id: 'rail-btn-scorecard', title: 'Supply-Chain & Scorecard Posture', active: section === 'scorecard', icon: <ScorecardPostureIcon size={17} />, onClick: () => onNavigate('scorecard') },
     { id: 'rail-btn-repos', title: 'Repositories', active: section === 'repositories', icon: <GridIcon size={17} />, onClick: () => onNavigate('repositories') },
   ];
 
@@ -116,13 +78,10 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
   const [overlayMetrics, setOverlayMetrics] = React.useState<WindowControlsOverlayMetrics>(
     () => platformBridge.getWindowControlsMetrics?.() ?? {},
   );
-  const isElectron = platformBridge.isElectron;
 
   React.useEffect(() => {
     if (!platformBridge.onWindowControlsMetricsChanged) return undefined;
-    return platformBridge.onWindowControlsMetricsChanged((metrics) => {
-      setOverlayMetrics(metrics);
-    });
+    return platformBridge.onWindowControlsMetricsChanged(setOverlayMetrics);
   }, []);
 
   const headerStyle: React.CSSProperties = {
@@ -132,27 +91,18 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
 
   return (
     <div id="nightfall-three-col-app" className="flex h-screen w-screen flex-col overflow-hidden bg-surface text-ink">
-      <header
-        style={headerStyle}
-        className="wc-drag flex h-10 shrink-0 items-center justify-between border-b border-primary-200 bg-primary-100/80 px-3"
-      >
+      <header style={headerStyle} className="wc-drag flex h-10 shrink-0 items-center justify-between border-b border-primary-200 bg-primary-100/80 px-3">
         <div className="wc-no-drag flex items-center gap-1">
-          {!isElectron && (
+          {!platformBridge.isElectron ? (
             <div className="mr-2 flex items-center gap-1.5" aria-hidden="true">
               <span className="size-2.5 rounded-full bg-rose-400" />
               <span className="size-2.5 rounded-full bg-amber-400" />
               <span className="size-2.5 rounded-full bg-emerald-400" />
             </div>
-          )}
-          <Button id="btn-history-back" variant="ghost" size="icon-sm" title="Back" disabled={!canGoBack} onClick={onHistoryBack}>
-            <ArrowLeftIcon size={16} />
-          </Button>
-          <Button variant="ghost" size="icon-sm" title="Forward" disabled>
-            <ArrowRightIcon size={16} />
-          </Button>
-          <Button id="btn-toggle-sidebar" variant="ghost" size="icon-sm" title="Toggle Nightfall navigation sidebar" onClick={onToggleSidebar}>
-            <SidebarLeftIcon size={16} />
-          </Button>
+          ) : null}
+          <Button id="btn-history-back" variant="ghost" size="icon-sm" title="Back" disabled={!canGoBack} onClick={onHistoryBack}><ArrowLeftIcon size={16} /></Button>
+          <Button variant="ghost" size="icon-sm" title="Forward" disabled><ArrowRightIcon size={16} /></Button>
+          <Button id="btn-toggle-sidebar" variant="ghost" size="icon-sm" title="Toggle Nightfall navigation sidebar" onClick={onToggleSidebar}><SidebarLeftIcon size={16} /></Button>
         </div>
 
         <div className="wc-no-drag flex items-center gap-1" role="tablist" aria-label="Workspace tabs">
@@ -193,9 +143,7 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
           {railButtons.map((rb, idx) => (
             <React.Fragment key={rb.id ?? idx}>
               {rb.dividerBefore ? <div className="my-1 h-px w-6 bg-primary-200" /> : null}
-              <Button id={rb.id} variant={rb.active ? 'secondary' : 'ghost'} size="icon" title={rb.title} onClick={rb.onClick}>
-                {rb.icon}
-              </Button>
+              <Button id={rb.id} variant={rb.active ? 'secondary' : 'ghost'} size="icon" title={rb.title} onClick={rb.onClick}>{rb.icon}</Button>
             </React.Fragment>
           ))}
         </aside>
@@ -205,9 +153,7 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
             <div>
               <div className="mb-2.5 flex items-center justify-between px-2">
                 <span className="text-[15px] font-semibold tracking-tight text-ink">Nightfall</span>
-                <Button variant="ghost" size="icon-sm" title="Collapse sidebar" onClick={onToggleSidebar}>
-                  <SidebarLeftIcon size={15} />
-                </Button>
+                <Button variant="ghost" size="icon-sm" title="Collapse sidebar" onClick={onToggleSidebar}><SidebarLeftIcon size={15} /></Button>
               </div>
 
               <div className="space-y-0.5 tabular-nums">
@@ -226,15 +172,16 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
                   }
                   onClick={() => onNavigate('fixes')}
                 />
-                <SidebarNavItem
-                  id="nav-btn-findings"
-                  active={section === 'findings' || section === 'finding-detail'}
-                  icon={<FilterIcon size={15} />}
-                  label="Findings"
-                  trailing={<span className="text-xs text-primary-600">{openFindingsCount}</span>}
-                  onClick={() => onNavigate('findings')}
-                />
+                <SidebarNavItem id="nav-btn-findings" active={section === 'findings' || section === 'finding-detail'} icon={<FilterIcon size={15} />} label="Findings" trailing={<span className="text-xs text-primary-600">{openFindingsCount}</span>} onClick={() => onNavigate('findings')} />
                 <SidebarNavItem id="nav-btn-repositories" active={section === 'repositories'} icon={<FolderIcon size={15} />} label="Repositories" onClick={() => onNavigate('repositories')} />
+                <SidebarNavItem
+                  id="nav-btn-scorecard"
+                  active={section === 'scorecard'}
+                  icon={<ScorecardPostureIcon size={15} />}
+                  label="Scorecard"
+                  trailing={averageScorecardScore !== null && averageScorecardScore !== undefined ? <ScorecardScorePill score={averageScorecardScore} /> : undefined}
+                  onClick={() => onNavigate('scorecard')}
+                />
                 <SidebarNavItem id="nav-btn-scans" active={section === 'scans'} icon={<ScanIcon size={15} />} label="Scans" onClick={() => onNavigate('scans')} />
                 <div className="my-2 h-px bg-primary-200" />
                 <SidebarNavItem id="nav-btn-red-team" active={section === 'red-team'} icon={<ShieldCheckIcon size={15} />} label="Red Team" trailing={<Badge variant="accent">New</Badge>} onClick={() => onNavigate('red-team', 'live-campaign')} />
@@ -287,19 +234,9 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
 }
 
 function SidebarNavItem({
-  id,
-  active,
-  icon,
-  label,
-  trailing,
-  onClick,
+  id, active, icon, label, trailing, onClick,
 }: {
-  id: string;
-  active: boolean;
-  icon: React.ReactNode;
-  label: string;
-  trailing?: React.ReactNode;
-  onClick: () => void;
+  id: string; active: boolean; icon: React.ReactNode; label: string; trailing?: React.ReactNode; onClick: () => void;
 }): React.ReactElement {
   return (
     <button
@@ -311,10 +248,7 @@ function SidebarNavItem({
         active ? 'bg-primary-200/75 text-ink' : 'text-primary-700 hover:bg-primary-100 hover:text-ink',
       )}
     >
-      <span className="inline-flex items-center gap-2">
-        {icon}
-        <span>{label}</span>
-      </span>
+      <span className="inline-flex items-center gap-2">{icon}<span>{label}</span></span>
       {trailing}
     </button>
   );

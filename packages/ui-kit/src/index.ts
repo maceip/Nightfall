@@ -17,3 +17,5 @@ export * from './components/prompt-kit/prompt-input.js';
 export * from './components/visualizations/sankey-diagram.js';
 export * from './components/visualizations/unified-diff-viewer.js';
 export * from './components/visualizations/trend-charts.js';
+export * from './components/visualizations/scorecard-posture-meter.js';
+

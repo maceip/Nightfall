@@ -211,6 +211,9 @@ importers:
       '@nightfall/policy-gate':
         specifier: workspace:*
         version: link:../../packages/policy-gate
+      '@nightfall/scorecard':
+        specifier: workspace:*
+        version: link:../../services/scorecard
 
   apps/nightfall-ui:
     dependencies:
@@ -257,6 +260,9 @@ importers:
       '@nightfall/sandbox-runtime':
         specifier: workspace:*
         version: link:../../packages/sandbox-runtime
+      '@nightfall/scorecard':
+        specifier: workspace:*
+        version: link:../../services/scorecard
       '@nightfall/shared-memory':
         specifier: workspace:*
         version: link:../../packages/shared-memory
@@ -425,6 +431,9 @@ importers:
       '@nightfall/sandbox-runtime':
         specifier: workspace:*
         version: link:../../packages/sandbox-runtime
+      '@nightfall/scorecard':
+        specifier: workspace:*
+        version: link:../scorecard
       '@nightfall/shared-memory':
         specifier: workspace:*
         version: link:../../packages/shared-memory
@@ -476,6 +485,18 @@ importers:
       yaml:
         specifier: ^2.7.0
         version: 2.9.1
+
+  services/scorecard:
+    dependencies:
+      '@nightfall/audit-ledger':
+        specifier: workspace:*
+        version: link:../../packages/audit-ledger
+      '@nightfall/core-contracts':
+        specifier: workspace:*
+        version: link:../../packages/core-contracts
+      '@nightfall/policy-gate':
+        specifier: workspace:*
+        version: link:../../packages/policy-gate
 
 packages:
 

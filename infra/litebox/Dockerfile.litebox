@@ -13,7 +13,19 @@ RUN git init . \
       -p litebox_packager \
       -p litebox_syscall_rewriter
 
-# Stage 2: Nightfall Runtime Image with Microsoft LiteBox Toolchain
+# Stage 2: Compile Vendored Nightfall Scorecard (https://github.com/ossf/scorecard) Go Engine
+FROM golang:1.24-bookworm AS scorecard-builder
+
+WORKDIR /src/scorecard
+COPY vendor/scorecard/ /src/scorecard/
+
+RUN CGO_ENABLED=0 GOTOOLCHAIN=auto go build \
+    -trimpath \
+    -ldflags="-s -w -X sigs.k8s.io/release-utils/version.gitVersion=v5.4.0-nightfall -X sigs.k8s.io/release-utils/version.gitCommit=6eb56f6a7e62d8f5d55800f54cd92ea305107d1d" \
+    -o /out/nightfall-scorecard \
+    .
+
+# Stage 3: Nightfall Runtime Image with Microsoft LiteBox + Nightfall Scorecard Toolchains
 FROM node:24-bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,11 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd -r nightfall && useradd -r -g nightfall -m -d /sandbox nightfall \
-  && mkdir -p /opt/nightfall/litebox/bin /opt/nightfall/litebox/share
+  && mkdir -p /opt/nightfall/litebox/bin /opt/nightfall/litebox/share /opt/nightfall/scorecard/bin
 
 COPY --from=litebox-builder /src/litebox/target/release/litebox_runner_linux_userland /opt/nightfall/litebox/bin/
 COPY --from=litebox-builder /src/litebox/target/release/litebox_packager /opt/nightfall/litebox/bin/
 COPY --from=litebox-builder /src/litebox/target/release/litebox_syscall_rewriter /opt/nightfall/litebox/bin/
+COPY --from=scorecard-builder /out/nightfall-scorecard /opt/nightfall/scorecard/bin/nightfall-scorecard
 
 RUN python3 -c 'import os, sysconfig, zipfile; std=sysconfig.get_path("stdlib"); z=zipfile.ZipFile("/opt/nightfall/litebox/share/python311.zip","w"); [z.write(os.path.join(r,f), os.path.relpath(os.path.join(r,f), std)) for r,_,fs in os.walk(std) if "test" not in r and "__pycache__" not in r for f in fs if f.endswith(".py")]; z.close()' \
   && find / -perm /6000 -type f -exec chmod a-s {} + 2>/dev/null || true
@@ -38,6 +51,7 @@ ENV NODE_ENV=production \
     HOME=/sandbox \
     TMPDIR=/tmp \
     NIGHTFALL_LITEBOX_BIN_DIR=/opt/nightfall/litebox/bin \
-    NIGHTFALL_LITEBOX_PYTHON_STDLIB_ZIP=/opt/nightfall/litebox/share/python311.zip
+    NIGHTFALL_LITEBOX_PYTHON_STDLIB_ZIP=/opt/nightfall/litebox/share/python311.zip \
+    NIGHTFALL_SCORECARD_BIN_DIR=/opt/nightfall/scorecard/bin
 
 CMD ["/opt/nightfall/litebox/bin/litebox_runner_linux_userland", "--help"]

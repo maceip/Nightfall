@@ -15,6 +15,7 @@
     "@nightfall/core-contracts": "workspace:*",
     "@nightfall/policy-gate": "workspace:*",
     "@nightfall/audit-ledger": "workspace:*",
+    "@nightfall/scorecard": "workspace:*",
     "@nightfall/closed-loop-orchestrator": "workspace:*"
   }
 }

@@ -7,6 +7,7 @@ import {
   FilterIcon,
   Input,
   KpiCard,
+  ScorecardScorePill,
   SearchIcon,
   SettingsIcon,
   StatusBadge,
@@ -16,12 +17,14 @@ export type RepositoriesScreenProps = {
   repositories: RepositoryRecord[];
   onToggleRepoScans: (repoId: string) => Promise<void>;
   onQuickScanRepo: (repoName: string) => Promise<void>;
+  onOpenRepoScorecard?: (repoName: string) => void;
 };
 
 export function RepositoriesScreen({
   repositories,
   onToggleRepoScans,
   onQuickScanRepo,
+  onOpenRepoScorecard,
 }: RepositoriesScreenProps): React.ReactElement {
   const [search, setSearch] = useState('');
   const [onlyAttention, setOnlyAttention] = useState(false);
@@ -53,6 +56,24 @@ export function RepositoriesScreen({
           <div className="mt-0.5 text-xs text-primary-500">{repo.fullName}</div>
         </div>
       ),
+    },
+    {
+      key: 'scorecard',
+      header: 'Scorecard',
+      cell: (repo) =>
+        onOpenRepoScorecard ? (
+          <button
+            id={`btn-repo-scorecard-${repo.name}`}
+            type="button"
+            onClick={() => onOpenRepoScorecard(repo.name)}
+            className="cursor-pointer bg-transparent p-0"
+            title={`Inspect Scorecard posture for ${repo.name}`}
+          >
+            <ScorecardScorePill score={repo.scorecardScore} />
+          </button>
+        ) : (
+          <ScorecardScorePill score={repo.scorecardScore} />
+        ),
     },
     {
       key: 'pr',
