@@ -19,11 +19,22 @@ git clone --depth 1 "$LITEBOX_REPO" "$TMP_BUILD_DIR/litebox"
 git -C "$TMP_BUILD_DIR/litebox" fetch --depth 1 origin "$LITEBOX_COMMIT"
 git -C "$TMP_BUILD_DIR/litebox" checkout --detach "$LITEBOX_COMMIT"
 
+# LiteBox pins `channel = "stable"` and uses recently stabilized std APIs, so an outdated stable
+# toolchain fails with E0658. Refresh stable when rustup manages the toolchain.
+if command -v rustup >/dev/null 2>&1; then
+  echo "[Nightfall] Updating the stable Rust toolchain (LiteBox tracks current stable)..."
+  rustup update stable --no-self-update
+fi
+
 echo "[Nightfall] Building litebox_runner_linux_userland, litebox_packager & litebox_syscall_rewriter..."
-cargo build --release --manifest-path "$TMP_BUILD_DIR/litebox/Cargo.toml" \
-  -p litebox_runner_linux_userland \
-  -p litebox_packager \
-  -p litebox_syscall_rewriter
+# Build from inside the checkout so its rust-toolchain.toml is honored.
+(
+  cd "$TMP_BUILD_DIR/litebox"
+  cargo build --release \
+    -p litebox_runner_linux_userland \
+    -p litebox_packager \
+    -p litebox_syscall_rewriter
+)
 
 mkdir -p "$BIN_DIR" "$SHARE_DIR"
 install -m 0755 "$TMP_BUILD_DIR/litebox/target/release/litebox_runner_linux_userland" "$BIN_DIR/"

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
   generateScopeKeyPair,
+  scopeSignerRegistryOf,
   parseCampaignYaml,
   signCampaignManifest,
   type CampaignYamlV5,
@@ -60,15 +61,17 @@ describe('@nightfall/red-team EgressPolicyProxy & RedTeamEngine', () => {
         allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
       },
     };
-    const signed = signCampaignManifest(manifest, keys.privateKeyPem, keys.keyId);
+    let fakeNow = 1_000_000;
+    const signed = signCampaignManifest(manifest, keys.privateKeyPem, keys.keyId, {
+      now: new Date(fakeNow),
+    });
 
     const ledger = new AuditLedger();
     const policyGate = new PolicyGate();
-    let fakeNow = 1_000_000;
 
     const proxy = new EgressPolicyProxy({
       signedManifest: signed,
-      publicKeyPem: keys.publicKeyPem,
+      scopeSigners: scopeSignerRegistryOf([keys]),
       campaignId: 'camp-egress-1',
       askForApproval: true,
       policyGate,
@@ -84,6 +87,7 @@ describe('@nightfall/red-team EgressPolicyProxy & RedTeamEngine', () => {
     });
     expect(badHost.allowed).toBe(false);
     expect(badHost.statusCode).toBe(403);
+    expect(badHost.blockedReason).toContain('outside approved campaign.targets');
     expect(upstreamHits).toBe(0);
 
     // 2. Disallowed HTTP method (DELETE) blocked
@@ -195,7 +199,7 @@ describe('@nightfall/red-team EgressPolicyProxy & RedTeamEngine', () => {
 
     const proxy = new EgressPolicyProxy({
       signedManifest: signed,
-      publicKeyPem: keys.publicKeyPem,
+      scopeSigners: scopeSignerRegistryOf([keys]),
       campaignId: 'camp-ws-srv',
       policyGate: new PolicyGate(),
       auditLedger: new AuditLedger(),
@@ -347,7 +351,7 @@ describe('@nightfall/red-team EgressPolicyProxy & RedTeamEngine', () => {
       campaignId: 'camp-rt-live',
       targetBaseUrl: 'https://staging.northstardocs.com',
       signedManifest,
-      publicKeyPem: keys.publicKeyPem,
+      scopeSigners: scopeSignerRegistryOf([keys]),
       targetTransportRedirects: {
         'https://staging.northstardocs.com': staging.baseUrl,
       },
@@ -359,4 +363,55 @@ describe('@nightfall/red-team EgressPolicyProxy & RedTeamEngine', () => {
     expect(assessment.evidenceBundles.some((ev) => ev.canaryMarker === STAGING_WS_A_CANARY)).toBe(true);
     expect(assessment.pendingApprovals).toHaveLength(1);
   }, 20_000);
+
+  it('refuses all traffic for an unpinned signer and confines loopback-only signers to loopback', async () => {
+    const manifest: CampaignYamlV5 = {
+      objective: 'Scope trust anchor',
+      campaign: {
+        name: 'trust-anchor',
+        targets: ['https://staging.example.com'],
+        source: { archive: 'src.tar.gz' },
+        max_duration: '5m',
+        max_requests_per_second: 20,
+      },
+      credentials: {},
+      http: { allow: [{ methods: ['GET'], path_prefixes: ['/'] }] },
+    };
+    const operator = generateScopeKeyPair('ops');
+    const selfMinted = generateScopeKeyPair('key-camp-x');
+
+    const unpinned = new EgressPolicyProxy({
+      signedManifest: signCampaignManifest(manifest, selfMinted.privateKeyPem, selfMinted.keyId),
+      scopeSigners: scopeSignerRegistryOf([operator]),
+      campaignId: 'camp-unpinned',
+      policyGate: new PolicyGate(),
+      auditLedger: new AuditLedger(),
+    });
+    const refused = unpinned.evaluateHttpPolicy({ method: 'GET', url: 'https://staging.example.com/' });
+    expect(refused.allowed).toBe(false);
+    expect(refused.reason).toContain('not a pinned authorized signer');
+
+    const loopbackOnly = new EgressPolicyProxy({
+      signedManifest: signCampaignManifest(manifest, operator.privateKeyPem, operator.keyId),
+      scopeSigners: scopeSignerRegistryOf([{ ...operator, loopbackTransportOnly: true }]),
+      campaignId: 'camp-loopback',
+      policyGate: new PolicyGate(),
+      auditLedger: new AuditLedger(),
+      targetTransportRedirects: { 'https://staging.example.com': 'http://127.0.0.1:9' },
+    });
+    expect(
+      loopbackOnly.evaluateHttpPolicy({ method: 'GET', url: 'https://staging.example.com/' }).allowed,
+    ).toBe(true);
+
+    const noRedirect = new EgressPolicyProxy({
+      signedManifest: signCampaignManifest(manifest, operator.privateKeyPem, operator.keyId),
+      scopeSigners: scopeSignerRegistryOf([{ ...operator, loopbackTransportOnly: true }]),
+      campaignId: 'camp-loopback-escape',
+      policyGate: new PolicyGate(),
+      auditLedger: new AuditLedger(),
+    });
+    const escape = noRedirect.evaluateHttpPolicy({ method: 'GET', url: 'https://staging.example.com/' });
+    expect(escape.allowed).toBe(false);
+    expect(escape.reason).toContain('only authorizes loopback traffic');
+  });
 });

@@ -1,8 +1,11 @@
 import http from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
+  isLoopbackUrl,
   parseDurationMs,
-  verifySignedCampaignManifest,
+  verifyScopeAuthorization,
+  type ScopeAuthorizationResult,
+  type ScopeSignerRegistry,
   type EndpointHitRecord,
   type HitlApprovalRequest,
   type HttpMethod,
@@ -15,7 +18,8 @@ import type { PolicyGate } from '@nightfall/policy-gate';
 
 export interface EgressPolicyProxyOptions {
   signedManifest: SignedScopeManifest;
-  publicKeyPem: string;
+  /** Operator-pinned signers. The proxy refuses all traffic unless the manifest verifies here. */
+  scopeSigners: ScopeSignerRegistry;
   campaignId: string;
   askForApproval?: boolean;
   policyGate: PolicyGate;
@@ -95,7 +99,7 @@ function toWebSocketUrl(rawOriginOrUrl: string, pathAndSearch: string): string {
 
 export class EgressPolicyProxy {
   private readonly signedManifest: SignedScopeManifest;
-  private readonly publicKeyPem: string;
+  private readonly scopeSigners: ScopeSignerRegistry;
   private readonly campaignId: string;
   private readonly askForApproval: boolean;
   private readonly policyGate: PolicyGate;
@@ -128,7 +132,7 @@ export class EgressPolicyProxy {
 
   constructor(options: EgressPolicyProxyOptions) {
     this.signedManifest = options.signedManifest;
-    this.publicKeyPem = options.publicKeyPem;
+    this.scopeSigners = options.scopeSigners;
     this.campaignId = options.campaignId;
     this.askForApproval = options.askForApproval ?? true;
     this.policyGate = options.policyGate;
@@ -169,8 +173,16 @@ export class EgressPolicyProxy {
     return toWebSocketUrl(redirectBase, `${parsed.pathname}${parsed.search}`);
   }
 
+  checkScopeAuthorization(): ScopeAuthorizationResult {
+    return verifyScopeAuthorization(
+      this.signedManifest,
+      this.scopeSigners,
+      new Date(this.nowFn()),
+    );
+  }
+
   isManifestSignatureValid(): boolean {
-    return verifySignedCampaignManifest(this.signedManifest, this.publicKeyPem);
+    return this.checkScopeAuthorization().authorized;
   }
 
   getStats(): { allowedCount: number; blockedCount: number } {
@@ -249,8 +261,9 @@ export class EgressPolicyProxy {
       };
     }
 
-    if (!this.isManifestSignatureValid()) {
-      const reason = 'Invalid or tampered SignedScopeManifest cryptographic signature';
+    const authorization = this.checkScopeAuthorization();
+    if (!authorization.authorized) {
+      const reason = `Scope not authorized: ${authorization.reason}`;
       this.auditLedger.recordBlockedEgress(reason, baseMeta);
       return {
         allowed: false,
@@ -258,6 +271,22 @@ export class EgressPolicyProxy {
         reason,
         riskTier: 'TIER_3_RESTRICTED',
       };
+    }
+
+    if (authorization.signer.loopbackTransportOnly) {
+      const transportUrl = isWebSocket
+        ? this.resolveTransportWsUrl(targetUrl.toString())
+        : this.resolveTransportHttpUrl(targetUrl.toString());
+      if (!isLoopbackUrl(transportUrl)) {
+        const reason = `Scope signer "${authorization.signer.keyId}" only authorizes loopback traffic; refusing ${new URL(transportUrl).host}`;
+        this.auditLedger.recordBlockedEgress(reason, baseMeta);
+        return {
+          allowed: false,
+          statusCode: 403,
+          reason,
+          riskTier: 'TIER_3_RESTRICTED',
+        };
+      }
     }
 
     const elapsedMs = this.nowFn() - this.startedAtMs;

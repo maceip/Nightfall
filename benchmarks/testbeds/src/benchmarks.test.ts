@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   FindingRecordSchema,
   generateScopeKeyPair,
+  scopeSignerRegistryOf,
   signCampaignManifest,
   type CampaignYamlV5,
 } from '@nightfall/core-contracts';
@@ -30,6 +31,37 @@ import {
   WS_A_CANARY,
   WS_CHANNEL_CANARY,
 } from './index.js';
+
+const BENCH_OPERATOR_KEY = generateScopeKeyPair('bench-operator');
+const BENCH_SCOPE_SIGNERS = scopeSignerRegistryOf([
+  { ...BENCH_OPERATOR_KEY, principal: 'Benchmark operator' },
+]);
+
+function benchScopeFor(baseUrl: string, name: string) {
+  const manifest: CampaignYamlV5 = {
+    objective: `Benchmark scope for ${name}`,
+    campaign: {
+      name,
+      targets: [baseUrl],
+      source: { archive: 'northstar-docs-source.tar.gz' },
+      max_duration: '15m',
+      max_requests_per_second: 50,
+    },
+    credentials: {},
+    http: { allow: [{ methods: ['GET', 'POST'], path_prefixes: ['/'] }] },
+    websocket: {
+      allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
+    },
+  };
+  return {
+    signedManifest: signCampaignManifest(
+      manifest,
+      BENCH_OPERATOR_KEY.privateKeyPem,
+      BENCH_OPERATOR_KEY.keyId,
+    ),
+    scopeSigners: BENCH_SCOPE_SIGNERS,
+  };
+}
 
 describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediation Suite', () => {
   const testbeds: NorthstarDocsTestbedServer[] = [];
@@ -74,12 +106,14 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
         allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
       },
     };
-    const signedManifest = signCampaignManifest(manifest, keys.privateKeyPem, keys.keyId);
-
     let simulatedNow = 5_000_000;
+    const signedManifest = signCampaignManifest(manifest, keys.privateKeyPem, keys.keyId, {
+      now: new Date(simulatedNow),
+    });
+
     const proxy = new EgressPolicyProxy({
       signedManifest,
-      publicKeyPem: keys.publicKeyPem,
+      scopeSigners: scopeSignerRegistryOf([keys]),
       campaignId: 'camp-bench-egress',
       askForApproval: true,
       policyGate: orchestrator.policyGate,
@@ -162,6 +196,7 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     const assessment = await orchestrator.redTeam.runAssessmentAgainstTestbed({
       campaignId: 'camp-bench-rt',
       targetBaseUrl: baseUrl,
+      ...benchScopeFor(baseUrl, 'camp-bench-rt'),
       aliceToken: ALICE_TOKEN,
       bobToken: BOB_TOKEN,
       bobWorkspaceId: BOB_WORKSPACE_ID,
@@ -263,13 +298,17 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
     testbeds.push(testbed);
     const { baseUrl } = await testbed.start(0);
 
-    const orchestrator = new NightfallOrchestrator({ stagingTargetUrl: baseUrl });
+    const orchestrator = new NightfallOrchestrator({
+      stagingTargetUrl: baseUrl,
+      scopeSigners: BENCH_SCOPE_SIGNERS,
+    });
     orchestrators.push(orchestrator);
 
     // Step 1: Discover and confirm F-001 & F-002 against unpatched staging testbed
     const assessment = await orchestrator.redTeam.runAssessmentAgainstTestbed({
       campaignId: 'camp-closed-loop',
       targetBaseUrl: baseUrl,
+      ...benchScopeFor(baseUrl, 'camp-closed-loop'),
       aliceToken: ALICE_TOKEN,
       bobToken: BOB_TOKEN,
       bobWorkspaceId: BOB_WORKSPACE_ID,
@@ -291,6 +330,7 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
 
     const verifiedF002 = await orchestrator.mergeAndVerifyFix(fixF002.id, {
       targetBaseUrl: baseUrl,
+      signedManifest: benchScopeFor(baseUrl, 'reverify-f002').signedManifest,
       aliceToken: ALICE_TOKEN,
       bobToken: BOB_TOKEN,
     });
@@ -305,6 +345,7 @@ describe('@nightfall/benchmarks E2E Security Verification & Closed-Loop Remediat
 
     const verifiedF001 = await orchestrator.mergeAndVerifyFix(fixF001.id, {
       targetBaseUrl: baseUrl,
+      signedManifest: benchScopeFor(baseUrl, 'reverify-f001').signedManifest,
       aliceToken: ALICE_TOKEN,
       bobToken: BOB_TOKEN,
     });

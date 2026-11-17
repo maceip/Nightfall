@@ -69,8 +69,28 @@ describe('@nightfall/nightfall-cli commands', () => {
 
     // 2. sign
     const signedOutPath = path.join(tmpDir, 'signed-scope.json');
-    const signRes = await runNightfallCli(['sign', yamlPath, '--out', signedOutPath]);
+    const unsignedRes = await runNightfallCli(['sign', yamlPath, '--out', signedOutPath]);
+    expect(unsignedRes.exitCode).toBe(1);
+    expect(unsignedRes.stderr).toContain('operator key is required');
+
+    const keyPath = path.join(tmpDir, 'operator-key.pem');
+    const keygenRes = await runNightfallCli([
+      'keygen', '--key-id', 'ops-lead', '--principal', 'Ops Lead', '--out', keyPath,
+    ]);
+    expect(keygenRes.exitCode).toBe(0);
+    expect(keygenRes.stdout).toContain('"keyId": "ops-lead"');
+    expect((await fs.stat(keyPath)).mode & 0o077).toBe(0);
+    const keygenAgain = await runNightfallCli([
+      'keygen', '--key-id', 'ops-lead', '--principal', 'Ops Lead', '--out', keyPath,
+    ]);
+    expect(keygenAgain.exitCode).toBe(1);
+
+    const signRes = await runNightfallCli([
+      'sign', yamlPath, '--key', keyPath, '--key-id', 'ops-lead', '--valid-for', '8h',
+      '--out', signedOutPath,
+    ]);
     expect(signRes.exitCode).toBe(0);
+    expect(signRes.publicKeyPem).toBe(keygenRes.publicKeyPem);
     expect(signRes.signedManifest).toBeDefined();
     expect(signRes.publicKeyPem).toBeDefined();
     expect(

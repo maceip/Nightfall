@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { NewScanRequestSchema } from '@nightfall/core-contracts';
+import { NewScanRequestSchema, type SignedScopeManifest } from '@nightfall/core-contracts';
 import { NightfallOrchestrator } from '@nightfall/closed-loop-orchestrator';
 
 export const PACKAGE_NAME = '@nightfall/api-gateway';
@@ -213,7 +213,11 @@ export function createApiServer(
         const campaignId = decodeURIComponent(launchMatch[1]!);
         const body = await readJsonBody(req);
         const yamlText = typeof body.yamlText === 'string' ? body.yamlText : undefined;
-        const result = await orchestrator.launchCampaign(campaignId, yamlText);
+        const signedManifest =
+          body.signedManifest && typeof body.signedManifest === 'object'
+            ? (body.signedManifest as SignedScopeManifest)
+            : undefined;
+        const result = await orchestrator.launchCampaign(campaignId, yamlText, signedManifest);
         sendJson(res, 200, result);
         return;
       }
