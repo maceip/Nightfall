@@ -66,6 +66,8 @@ export interface SignedScopeManifest {
   canonicalDigestSha256: string;
   signatureBase64: string;
   issuedAt: string;
+  /** End of the authorization window. Bound into the signature, so it cannot be extended. */
+  expiresAt: string;
   keyId: string;
 }
 
@@ -127,39 +129,99 @@ export function generateScopeKeyPair(keyId = `nf-key-${crypto.randomUUID().slice
   return { keyId, publicKeyPem: publicKey, privateKeyPem: privateKey };
 }
 
+export const DEFAULT_SCOPE_AUTHORIZATION_VALIDITY_MS = 24 * 60 * 60 * 1000;
+
+export interface SignCampaignManifestOptions {
+  /** How long the authorization stays valid. Defaults to 24 hours. */
+  validForMs?: number;
+  now?: Date;
+}
+
+/**
+ * The exact bytes an Ed25519 scope signature covers. Domain-separated and bound to the key id and
+ * the validity window, so a signature cannot be relabelled to another signer or replayed past expiry.
+ */
+export function scopeSignaturePayload(fields: {
+  keyId: string;
+  issuedAt: string;
+  expiresAt: string;
+  canonicalDigestSha256: string;
+}): Buffer {
+  return Buffer.from(
+    [
+      'nightfall-scope-authorization-v1',
+      fields.keyId,
+      fields.issuedAt,
+      fields.expiresAt,
+      fields.canonicalDigestSha256,
+    ].join('\n'),
+    'utf8',
+  );
+}
+
+export function canonicalManifestDigest(manifest: CampaignYamlV5): string {
+  const validated = CampaignYamlV5Schema.parse(manifest);
+  return crypto.createHash('sha256').update(canonicalizeJson(validated)).digest('hex');
+}
+
+/**
+ * Signs a scope manifest with an operator-held private key. Runtime services must never call this
+ * with a key they generated themselves; authorization is checked against a pinned signer registry
+ * (see `verifyScopeAuthorization` in `scopeAuthority.ts`).
+ */
 export function signCampaignManifest(
   manifest: CampaignYamlV5,
   privateKeyPem: string,
   keyId = 'nf-scope-default',
+  options?: SignCampaignManifestOptions,
 ): SignedScopeManifest {
   const validated = CampaignYamlV5Schema.parse(manifest);
-  const canonical = canonicalizeJson(validated);
-  const canonicalDigestSha256 = crypto.createHash('sha256').update(canonical).digest('hex');
-  const signature = crypto.sign(null, Buffer.from(canonicalDigestSha256, 'utf8'), privateKeyPem);
+  const canonicalDigestSha256 = canonicalManifestDigest(validated);
+  const now = options?.now ?? new Date();
+  const issuedAt = now.toISOString();
+  const expiresAt = new Date(
+    now.getTime() + (options?.validForMs ?? DEFAULT_SCOPE_AUTHORIZATION_VALIDITY_MS),
+  ).toISOString();
+  const signature = crypto.sign(
+    null,
+    scopeSignaturePayload({ keyId, issuedAt, expiresAt, canonicalDigestSha256 }),
+    privateKeyPem,
+  );
   return {
     version: 'v5',
     manifest: validated,
     canonicalDigestSha256,
     signatureBase64: signature.toString('base64'),
-    issuedAt: new Date().toISOString(),
+    issuedAt,
+    expiresAt,
     keyId,
   };
 }
 
+/**
+ * Integrity check only: is `signed` an untampered manifest signed by `publicKeyPem`? This does NOT
+ * decide whether the signer is authorized; use `verifyScopeAuthorization` for that.
+ */
 export function verifySignedCampaignManifest(
   signed: SignedScopeManifest,
   publicKeyPem: string,
 ): boolean {
   try {
-    const validated = CampaignYamlV5Schema.parse(signed.manifest);
-    const canonical = canonicalizeJson(validated);
-    const expectedDigest = crypto.createHash('sha256').update(canonical).digest('hex');
+    const expectedDigest = canonicalManifestDigest(signed.manifest);
     if (expectedDigest !== signed.canonicalDigestSha256) {
+      return false;
+    }
+    if (typeof signed.expiresAt !== 'string' || typeof signed.issuedAt !== 'string') {
       return false;
     }
     return crypto.verify(
       null,
-      Buffer.from(expectedDigest, 'utf8'),
+      scopeSignaturePayload({
+        keyId: signed.keyId,
+        issuedAt: signed.issuedAt,
+        expiresAt: signed.expiresAt,
+        canonicalDigestSha256: expectedDigest,
+      }),
       publicKeyPem,
       Buffer.from(signed.signatureBase64, 'base64'),
     );

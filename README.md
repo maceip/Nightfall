@@ -69,6 +69,31 @@ NIGHTFALL_DEBUG_BUILD=1 NIGHTFALL_PREVIEW_IDENTITY=1 pnpm bundle:desktop:msi
 
 ---
 
+## Authorizing a campaign scope
+
+Nightfall sends traffic to a target only when its `campaign.yaml` is signed by a key you pinned in
+advance. The runtime cannot create that key. The bundled staging server is the one exception: the
+runtime starts it on loopback itself, so it may authorize traffic to it, and only traffic that
+reaches a loopback address.
+
+```bash
+# Once per accountable person. Keep the private key off the Nightfall host.
+pnpm cli keygen --key-id ops-lead --principal "Ops Lead" --out ~/.nightfall/ops-lead.pem
+
+# Pin the printed entry in a registry file and point Nightfall at it:
+#   { "version": 1, "signers": [ { "keyId": "ops-lead", "principal": "Ops Lead", "publicKeyPem": "..." } ] }
+export NIGHTFALL_SCOPE_SIGNERS=/etc/nightfall/scope-signers.json
+
+# Sign each scope. The authorization expires (24h by default).
+pnpm cli sign campaign.yaml --key ~/.nightfall/ops-lead.pem --key-id ops-lead --valid-for 8h
+```
+
+Send the resulting `signedManifest` as the `signedManifest` field of
+`POST /api/red-team/campaigns/:id/launch`. Signers can be limited to certain target origins
+(`allowedTargetOrigins`), given an expiry (`notAfter`) or revoked (`revoked: true`). See `audit.md` §12.
+
+---
+
 ## Documentation & Governance
 
 - [AGENTS.md](./AGENTS.md) — Repo-wide zero-mock rules, `@nightfall/ui-kit` design-system mandate, `<320 LOC` ceiling, and `Nightfall` nomenclature rules

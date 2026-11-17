@@ -1,8 +1,10 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
   generateScopeKeyPair,
   parseCampaignYaml,
+  parseDurationMs,
   signCampaignManifest,
   verifySignedCampaignManifest,
   type AuditEntry,
@@ -31,10 +33,16 @@ const USAGE_TEXT = `Nightfall CLI (@nightfall/nightfall-cli)
 
 Usage:
   nightfall validate <campaign.yaml>
-  nightfall sign <campaign.yaml> [--out <signed.json>]
+  nightfall keygen --key-id <id> --principal <name> --out <private-key.pem>
+  nightfall sign <campaign.yaml> --key <private-key.pem> --key-id <id> [--valid-for <8h>] [--out <signed.json>]
   nightfall status
   nightfall verify-audit [--file <entries.json>]
 `;
+
+function flagValue(args: string[], flag: string): string | undefined {
+  const idx = args.indexOf(flag);
+  return idx >= 0 && args[idx + 1] ? args[idx + 1] : undefined;
+}
 
 export async function runNightfallCli(
   argv: string[],
@@ -91,6 +99,39 @@ export async function runNightfallCli(
     }
   }
 
+  if (command === 'keygen') {
+    const keyId = flagValue(rest, '--key-id');
+    const principal = flagValue(rest, '--principal');
+    const outArg = flagValue(rest, '--out');
+    if (!keyId || !principal || !outArg) {
+      return {
+        exitCode: 1,
+        stdout: '',
+        stderr: 'Error: "keygen" requires --key-id, --principal and --out.',
+      };
+    }
+    try {
+      const outPath = path.resolve(cwd, outArg);
+      const keys = generateScopeKeyPair(keyId);
+      // 'wx' refuses to overwrite an existing key; 0o600 keeps it private to the operator.
+      await fs.writeFile(outPath, keys.privateKeyPem, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      const signerEntry = { keyId, principal, publicKeyPem: keys.publicKeyPem };
+      return {
+        exitCode: 0,
+        stdout: [
+          `Wrote private scope-signing key to ${outPath} (keep it off the Nightfall host).`,
+          'Add this entry to the "signers" array of the file named by NIGHTFALL_SCOPE_SIGNERS:',
+          JSON.stringify(signerEntry, null, 2),
+        ].join('\n'),
+        stderr: '',
+        publicKeyPem: keys.publicKeyPem,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { exitCode: 1, stdout: '', stderr: `Key generation failed: ${msg}` };
+    }
+  }
+
   if (command === 'sign') {
     const fileArg = rest[0];
     if (!fileArg) {
@@ -110,10 +151,23 @@ export async function runNightfallCli(
       const rawYaml = await fs.readFile(resolvedInput, 'utf8');
       const manifest = parseCampaignYaml(rawYaml);
 
-      const keys = generateScopeKeyPair();
-      const signed = signCampaignManifest(manifest, keys.privateKeyPem, keys.keyId);
-      const verified = verifySignedCampaignManifest(signed, keys.publicKeyPem);
-      if (!verified) {
+      const keyPath = flagValue(rest, '--key');
+      const keyId = flagValue(rest, '--key-id');
+      if (!keyPath || !keyId) {
+        throw new Error(
+          'an operator key is required: --key <private-key.pem> --key-id <id> (create one with "nightfall keygen").',
+        );
+      }
+      const privateKeyPem = await fs.readFile(path.resolve(cwd, keyPath), 'utf8');
+      const validFor = flagValue(rest, '--valid-for');
+      const signed = signCampaignManifest(manifest, privateKeyPem, keyId, {
+        ...(validFor ? { validForMs: parseDurationMs(validFor) } : {}),
+      });
+      const publicKeyPem = crypto
+        .createPublicKey(privateKeyPem)
+        .export({ type: 'spki', format: 'pem' })
+        .toString();
+      if (!verifySignedCampaignManifest(signed, publicKeyPem)) {
         throw new Error('Self-verification of newly signed scope manifest failed.');
       }
 
@@ -126,7 +180,6 @@ export async function runNightfallCli(
         JSON.stringify(
           {
             signedManifest: signed,
-            publicKeyPem: keys.publicKeyPem,
           },
           null,
           2,
@@ -140,11 +193,12 @@ export async function runNightfallCli(
           `Signed Nightfall v5 manifest "${manifest.campaign.name}"`,
           `  Key ID : ${signed.keyId}`,
           `  SHA256 : ${signed.canonicalDigestSha256}`,
+          `  Expires: ${signed.expiresAt}`,
           `  Output : ${outPath}`,
         ].join('\n'),
         stderr: '',
         signedManifest: signed,
-        publicKeyPem: keys.publicKeyPem,
+        publicKeyPem,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

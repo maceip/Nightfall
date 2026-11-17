@@ -53,7 +53,7 @@ The end-to-end loop is coherent only for one bundled scenario (`northstar-docs`,
 
 ## 1. Nightfall Red Team — required changes
 
-### 1.1 — S1 — The "signed scope manifest" provides no security (self-signed)
+### 1.1 — S1 (fixed in this PR, see 12.3) — The "signed scope manifest" provides no security (self-signed)
 - Premise (`docs/BUILD_PLAN.md`, "Safety-First Architectural Invariant"): scope is enforced
   deterministically by a cryptographically signed `campaign.yaml`.
 - Evidence: `verifySignedCampaignManifest` checks the signature against a public key passed in
@@ -299,6 +299,9 @@ LLM, and a configuration page needs to list trusted vendors for this.*
     stable Rust, no digest check).
   - A sandbox that never executed anything is attested as `microsoft-litebox` if the toolchain is
     merely present (`:826-830`).
+- Partly fixed in this PR: the teardown record now reports the weakest backend any command actually
+  ran under, lists `backendsUsed` and `commandsExecuted`, and reports `process-confined` when nothing
+  ran, instead of inferring `microsoft-litebox` from toolchain presence (12.3).
 - Required change: fail closed (or warn loudly in UI and attestation) when isolation is unavailable;
   isolate Node workloads by another real mechanism; state per platform and per language which backend
   actually ran; attest only what executed.
@@ -504,7 +507,7 @@ in `README.md`, `AGENTS.md`, `docs/`, or the UI, against what the code does at t
 | "Isolated with Microsoft LiteBox" | True for Python on Linux with the toolchain built; Node workloads and other platforms are `process-confined`, silently | 4.3, GAP-20 |
 | "Zero runtime mock fallbacks" | Findings, patches and model output are fixtures/fallbacks | §0, GAP-08, GAP-10 |
 | "Confirm real weaknesses with reproducible `EvidenceBundle` proofs" | Two hardcoded findings; sandbox re-asserts host values | GAP-04, GAP-13 |
-| "Ed25519-signed `campaign.yaml` enforces scope" | Self-signed by the runner; redirects not re-checked | 1.1, 1.7 |
+| "Ed25519-signed `campaign.yaml` enforces scope" | Now verified against operator-pinned signers (12.3); redirects still not re-checked | 1.1, 1.7 |
 | "Mandatory Two-Stage Test Proof + independent Critic gate" | Runs on fixtures; critic is a fallback value | GAP-15, GAP-08 |
 | "Commits reviewable Git branches/PRs" | Whole-file overwrite differing from the shown diff | GAP-18 |
 | "Re-test fixes post-deployment" | Nothing is merged; closure asserts precomputed booleans | 2.7, GAP-14 |
@@ -1204,10 +1207,103 @@ running. Readers should weigh the findings accordingly.
 
 ---
 
+## 12. Hardware attestation: where it is genuinely needed
+
+Question asked: where, if anywhere, does Nightfall need hardware attestation? The broad trust model
+of `maceip/tamayo` (evidence demanded at mint time, scaled to the tier of machine) and
+`maceip/eat-pass` (issuance gated on a hardware quote) was used as a reference. Unlinkability and
+anonymous tokens are out of scope: Nightfall needs the opposite, a named accountable person behind
+every action (5.1). `maceip/universal-attestation` was not reachable from this review.
+
+### 12.1 Answer
+
+Not in the product as it ships. Every place the code says "attest" or "signed" today failed for a
+reason hardware cannot fix: there was no trust anchor (1.1) and the sandbox record reported what it
+assumed rather than what ran (4.3). Both are fixed in software in this PR. Adding TPM or TEE quotes on
+top of a runtime that signs its own authorization would have attested a broken design.
+
+The question attestation answers is "can a remote party trust code running on a machine it does not
+control?" In a desktop or self-hosted install the operator controls the machine, so a quote proves
+nothing to anyone who matters.
+
+### 12.2 Where it applies
+
+| Place | Needed? | What to use |
+| --- | --- | --- |
+| Scope authorization (who may point probes at a target) | No attestation. Needs a trust anchor and a key the runtime cannot mint | Pinned signer registry (12.3). Keep signer private keys in non-exportable hardware (security key, Secure Enclave, TPM, cloud KMS): that is key custody, not attestation. Optionally verify a key attestation once, when a signer is enrolled, to prove the key cannot be exported |
+| Local sandbox (LiteBox / process) | No | Report only what executed (done, 12.3); fail closed when isolation is missing (4.3) |
+| Hosted or remote runners that run customer code or exploits, or hold target credentials, on infrastructure the customer does not operate | **Yes, the one genuine case** | Release repository access and target credentials only to a runner whose SEV-SNP/TDX quote matches a published measurement (key-release gating, the tamayo "confidential cloud" tier). LiteBox already ships a `sev_snp` south platform (`packages/sandbox-runtime/src/index.ts:135`), so the isolation backend exists; the quote verification and key release do not |
+| Third-party model inference over customer code (3.3, 5.4) | Only for regulated buyers who refuse self-hosting | Confidential inference with a verified attestation, or the self-hosted model mode. Self-hosting is the simpler requirement and should come first |
+| Evidence and teardown receipts shown to an auditor | Not attestation | Sign receipts and ledger checkpoints with an operator-held key. A TEE-signed receipt only adds value once 12.2 row 3 exists |
+| Desktop app integrity | No | Code signing and notarization (5.5) |
+
+Build order: the trust anchor (done), then evidence signing and fail-closed isolation, then hosted
+runners with attestation only if a hosted offering is planned.
+
+### 12.3 What this PR changes
+
+- **Scope trust anchor (closes the self-signing in 1.1).** `packages/core-contracts/src/scopeAuthority.ts`
+  adds a signer registry loaded from the file named by `NIGHTFALL_SCOPE_SIGNERS`. Each signer has a
+  pinned Ed25519 public key, an accountable principal, and optional target-origin limits, an expiry
+  and a revocation flag. With no registry configured, nothing can be launched against a real target.
+  A malformed or missing configured file throws instead of disabling enforcement.
+- **Signatures cover more.** Each signature now covers the key id, issue time, expiry and manifest
+  digest, under a domain-separation prefix. A signature therefore cannot be moved to another key id,
+  have its expiry extended, or be replayed after it expires. Authorizations expire after 24 hours
+  unless `--valid-for` is set.
+- **The runtime no longer authorizes itself.** `generateScopeKeyPair` has been removed from
+  `RedTeamEngine.runAssessment`, `verifyFixClosure` and `launchCampaign`. The egress proxy checks the
+  manifest against the registry on every request, and blocks the request when it fails.
+  `launchCampaign` and `mergeAndVerifyFix` accept an externally signed manifest. Every rejection is
+  written to the audit ledger (`scope.authorization.rejected`). The launch entry records the signer's
+  principal.
+- **One self-authorized exception, and its limit.** The runtime may still sign scope for the bundled
+  northstar staging server, which it starts itself on loopback. That signer may only name the bundled
+  origin and the loopback server, and it carries `loopbackTransportOnly`. The proxy checks the real
+  transport address of every request against that flag, so this key can never reach a third-party
+  host. A non-loopback `stagingTargetUrl` with no operator signature fails closed.
+- **CLI.** `nightfall keygen --key-id --principal --out` writes the private key with mode 0600 and
+  refuses to overwrite an existing file, then prints the registry entry.
+  `nightfall sign --key --key-id [--valid-for]` signs with that key. `sign` no longer creates a
+  throwaway key.
+- **Sandbox record (part of 4.3).** See 4.3. The field `sha256Attestation` is now documented as an
+  unkeyed digest. It detects corruption but is not an attestation, and should be renamed when the UI
+  contract can change.
+- **Tests.** 10 new tests: unpinned keys, a key id moved to another key, tampering, an extended
+  expiry, expiry, revocation, target limits, registry loading, loopback parsing, proxy refusal and
+  loopback confinement, orchestrator refusal plus audit entries, CLI keygen/sign, and the sandbox
+  record when nothing ran or a command timed out. With LiteBox built: 54/54 pass.
+
+### 12.4 Re-review: fundamentals still missing after this pass
+
+- **The UI cannot supply a signed manifest yet.** A launch from the YAML builder against any target
+  other than the bundled staging server is now refused with a clear error. The UI needs a control to
+  import a signed manifest. The API and `launchCampaignApi` already accept `signedManifest`.
+  Better still, sign in the browser with a WebAuthn/passkey credential,
+  which gives hardware-held keys without any new infrastructure.
+- **Revocation takes effect only on restart.** The registry is read once, when the orchestrator
+  starts. It should be reloaded when the file changes, and a revocation should stop campaigns that
+  are already running.
+- **Expiry depends on the host clock.** Anyone who can change the clock can extend an
+  authorization. That is acceptable on an operator's own machine. A hosted deployment needs a
+  trusted time source.
+- **No two-person rule.** High-risk scopes (production targets, mutating methods) should need two
+  distinct signers. This pairs with separation of duties in 5.1.
+- **Redirects can still leave scope (1.7).** The loopback check runs on each request the proxy
+  evaluates. A followed redirect is not re-evaluated, so 1.7 must be fixed for any scope guarantee
+  to hold, the loopback limit included.
+- **Ownership of the target is still not proven (5.2).** A pinned signer proves that an accountable
+  person authorized the scope. It does not prove that the person owns the target. DNS or well-known
+  file verification is still required.
+- **Evidence has no chain of custody.** Evidence bundles and ledger checkpoints are not signed, so
+  a report handed to a customer or auditor cannot be verified independently (12.2 row 5).
+
+---
+
 ## Priority order for remediation
 
 1. Stop the destructive/unsafe paths: 2.1 (whole-file overwrite), 4.5 (unauthenticated safety
-   controls), 1.1 (self-signed scope).
+   controls), 1.7 (redirect scope escape). 1.1 (self-signed scope) is fixed in this PR (12.3).
 2. Make the premise true: 0.1–0.3, 2.2, 2.3, 3.1 (real offensive model behind the gateway).
 3. Make it governable: 3.2 / 3.3 (trusted-vendor configuration page), 1.2–1.3 (honest verification).
 4. Make it adoptable: 4.1, 4.2, 4.3, 4.4, 4.6; then the S3 polish items.

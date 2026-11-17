@@ -56,13 +56,26 @@ export interface SandboxHandle {
   tunDeviceName?: string;
 }
 
+/**
+ * Teardown receipt for one sandbox. Despite the historical name this is a self-reported record, not
+ * a cryptographic attestation: `sha256Attestation` is an unkeyed digest of these same fields, so it
+ * detects accidental corruption but proves nothing to a third party.
+ */
 export interface TeardownAttestation {
   sandboxId: string;
   createdAt: string;
   destroyedAt: string;
   filesErasedCount: number;
   tarBundlesErasedCount: number;
+  /**
+   * The weakest isolation any command in this sandbox actually ran under. `process-confined` when
+   * any command ran outside LiteBox, and also when nothing executed at all (never claims LiteBox
+   * isolation that did not happen).
+   */
   backend: SandboxBackendKind;
+  /** Every backend a command actually executed under, in first-use order. Empty if none ran. */
+  backendsUsed: SandboxBackendKind[];
+  commandsExecuted: number;
   northShim: LiteBoxNorthShim;
   southPlatform: LiteBoxSouthPlatform;
   sha256Attestation: string;
@@ -103,6 +116,8 @@ export interface LiteBoxInvocationSpec {
 interface InternalSandboxState {
   handle: SandboxHandle;
   lastBackendUsed: SandboxBackendKind | null;
+  backendsUsed: SandboxBackendKind[];
+  commandsExecuted: number;
   tarBundlesCreated: number;
 }
 
@@ -450,6 +465,14 @@ function runProcessWithTimeout(params: {
   });
 }
 
+function recordBackendUse(state: InternalSandboxState, backend: SandboxBackendKind): void {
+  state.lastBackendUsed = backend;
+  state.commandsExecuted += 1;
+  if (!state.backendsUsed.includes(backend)) {
+    state.backendsUsed.push(backend);
+  }
+}
+
 export class DisposableSandboxRuntime {
   private readonly states = new Map<string, InternalSandboxState>();
   private readonly attestations: TeardownAttestation[] = [];
@@ -548,6 +571,8 @@ export class DisposableSandboxRuntime {
     this.states.set(id, {
       handle,
       lastBackendUsed: null,
+      backendsUsed: [],
+      commandsExecuted: 0,
       tarBundlesCreated: 0,
     });
 
@@ -686,6 +711,8 @@ export class DisposableSandboxRuntime {
         tunDeviceName: options?.tunDeviceName ?? handle.tunDeviceName,
       });
 
+      // Recorded before running so a command that times out or fails still counts.
+      recordBackendUse(state, 'microsoft-litebox');
       const runRes = await runProcessWithTimeout({
         binary: invocation.runnerBinary,
         args: invocation.runnerArgs,
@@ -698,7 +725,6 @@ export class DisposableSandboxRuntime {
         timeoutMs: remainingTimeoutMs,
       });
 
-      state.lastBackendUsed = 'microsoft-litebox';
       return {
         exitCode: runRes.exitCode,
         stdout: runRes.stdout,
@@ -777,6 +803,8 @@ export class DisposableSandboxRuntime {
       ...(options?.env ?? {}),
     };
 
+    // Recorded before running so a command that times out or fails still counts.
+    recordBackendUse(state, 'process-confined');
     const procRes = await runProcessWithTimeout({
       binary: command,
       args,
@@ -785,7 +813,6 @@ export class DisposableSandboxRuntime {
       timeoutMs: effectiveTimeoutMs,
     });
 
-    state.lastBackendUsed = 'process-confined';
     return {
       ...procRes,
       backendUsed: 'process-confined',
@@ -823,14 +850,16 @@ export class DisposableSandboxRuntime {
 
     handle.destroyed = true;
     const destroyedAt = new Date().toISOString();
+    const backendsUsed = [...state.backendsUsed];
     const backend: SandboxBackendKind =
-      state.lastBackendUsed ??
-      (handle.liteboxAvailable && handle.executionMode !== 'process-confined'
+      backendsUsed.length > 0 && backendsUsed.every((b) => b === 'microsoft-litebox')
         ? 'microsoft-litebox'
-        : 'process-confined');
+        : 'process-confined';
 
     const canonicalAttestationPayload = JSON.stringify({
       backend,
+      backendsUsed,
+      commandsExecuted: state.commandsExecuted,
       createdAt: handle.createdAt,
       destroyedAt,
       filesErasedCount,
@@ -854,6 +883,8 @@ export class DisposableSandboxRuntime {
       filesErasedCount,
       tarBundlesErasedCount: state.tarBundlesCreated,
       backend,
+      backendsUsed,
+      commandsExecuted: state.commandsExecuted,
       northShim: handle.northShim,
       southPlatform: handle.southPlatform,
       sha256Attestation,
