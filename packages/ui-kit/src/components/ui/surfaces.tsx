@@ -7,7 +7,7 @@ export function Card({ className, ...props }: CardProps): React.ReactElement {
   return (
     <div
       className={cn(
-        'rounded-xl border border-primary-200 bg-surface p-4 text-ink shadow-2xs',
+        'rounded-2xl border border-[#EBEBEA] bg-white p-4 text-[#141514]',
         className,
       )}
       {...props}
@@ -23,16 +23,101 @@ export type KpiCardProps = {
   className?: string;
 };
 
-export function KpiCard({ label, value, suffix, caption, className }: KpiCardProps): React.ReactElement {
+export function KpiCard({
+  label,
+  value,
+  suffix,
+  caption,
+  className,
+}: KpiCardProps): React.ReactElement {
   return (
     <Card className={cn('flex flex-col justify-between gap-2 p-4', className)}>
-      <div className="text-xs font-medium text-primary-600">{label}</div>
+      <div className="text-[12.5px] font-medium text-[#5E605D]">{label}</div>
       <div className="flex items-baseline gap-1.5 tabular-nums">
-        <span className="text-2xl font-semibold tracking-tight text-ink">{value}</span>
-        {suffix ? <span className="text-sm text-primary-500">{suffix}</span> : null}
+        <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-[#141514]">
+          {value}
+        </span>
+        {suffix ? <span className="text-[15px] text-[#7A7C78]">{suffix}</span> : null}
       </div>
-      {caption ? <div className="text-xs text-primary-500">{caption}</div> : null}
+      {caption ? <div className="text-[12px] text-[#6E706D]">{caption}</div> : null}
     </Card>
+  );
+}
+
+export type ConnectedKpiCell = {
+  key: string;
+  label: React.ReactNode;
+  value: React.ReactNode;
+  suffix?: React.ReactNode;
+  caption?: React.ReactNode;
+  onClick?: () => void;
+};
+
+export function ConnectedKpiStrip({
+  cells,
+  labelFirst = true,
+  className,
+}: {
+  cells: ConnectedKpiCell[];
+  labelFirst?: boolean;
+  className?: string;
+}): React.ReactElement {
+  const colsCls =
+    cells.length === 4
+      ? 'grid-cols-2 sm:grid-cols-4'
+      : cells.length === 3
+        ? 'grid-cols-1 sm:grid-cols-3'
+        : 'grid-cols-2';
+  return (
+    <div
+      className={cn(
+        'grid divide-y sm:divide-y-0 sm:divide-x divide-[#ECEEE9] rounded-2xl border border-[#E6E7E5] bg-white tabular-nums',
+        colsCls,
+        className,
+      )}
+    >
+      {cells.map((cell) => {
+        const Tag = cell.onClick ? 'button' : 'div';
+        return (
+          <Tag
+            key={cell.key}
+            type={cell.onClick ? 'button' : undefined}
+            onClick={cell.onClick}
+            className={cn(
+              'flex flex-col justify-between gap-2 px-5 py-4 text-left',
+              cell.onClick && 'cursor-pointer transition-colors hover:bg-[#FAFBF9]',
+            )}
+          >
+            {labelFirst ? (
+              <>
+                <div className="text-[12.5px] font-medium text-[#5E605D]">{cell.label}</div>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-[#141514]">
+                    {cell.value}
+                  </span>
+                  {cell.suffix ? (
+                    <span className="text-[18px] font-medium text-[#8A8C88]">{cell.suffix}</span>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-[#141514]">
+                    {cell.value}
+                  </span>
+                  {cell.suffix ? (
+                    <span className="text-[18px] font-medium text-[#8A8C88]">{cell.suffix}</span>
+                  ) : null}
+                </div>
+                <div className="text-[13px] text-[#6E706D]">{cell.label}</div>
+              </>
+            )}
+            {cell.caption ? <div className="text-[12px] text-[#6E706D]">{cell.caption}</div> : null}
+          </Tag>
+        );
+      })}
+    </div>
   );
 }
 
@@ -43,12 +128,17 @@ export type SectionHeaderProps = {
   className?: string;
 };
 
-export function SectionHeader({ title, subtitle, actions, className }: SectionHeaderProps): React.ReactElement {
+export function SectionHeader({
+  title,
+  subtitle,
+  actions,
+  className,
+}: SectionHeaderProps): React.ReactElement {
   return (
     <div className={cn('mb-3 flex items-center justify-between gap-3', className)}>
       <div className="min-w-0">
-        <h2 className="m-0 text-[15px] font-semibold tracking-tight text-ink">{title}</h2>
-        {subtitle ? <p className="mt-0.5 mb-0 text-xs text-primary-600">{subtitle}</p> : null}
+        <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em] text-[#141514]">{title}</h2>
+        {subtitle ? <p className="mt-0.5 mb-0 text-[12.5px] text-[#5E605D]">{subtitle}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </div>
@@ -70,6 +160,8 @@ export type DataTableProps<T> = {
   onRowClick?: (row: T) => void;
   emptyMessage?: React.ReactNode;
   ariaLabel?: string;
+  hideHeader?: boolean;
+  footer?: React.ReactNode;
   className?: string;
 };
 
@@ -81,24 +173,31 @@ export function DataTable<T>({
   onRowClick,
   emptyMessage = 'No records match the current filter.',
   ariaLabel,
+  hideHeader = false,
+  footer,
   className,
 }: DataTableProps<T>): React.ReactElement {
   return (
-    <div className={cn('w-full overflow-x-auto rounded-xl border border-primary-200 bg-surface', className)}>
-      <table className="w-full border-collapse text-left text-[13px] tabular-nums" aria-label={ariaLabel}>
-        <thead>
-          <tr className="border-b border-primary-200 bg-primary-50 text-xs font-medium text-primary-600">
-            {columns.map((col) => (
-              <th key={col.key} className={cn('px-3.5 py-2.5 font-medium', col.className)}>
-                {col.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-primary-200/70">
+    <div className={cn('w-full overflow-x-auto bg-white', className)}>
+      <table
+        className="w-full border-collapse text-left text-[13.5px] tabular-nums"
+        aria-label={ariaLabel}
+      >
+        {!hideHeader ? (
+          <thead>
+            <tr className="border-b border-[#ECEEE9] bg-white text-[12px] font-medium text-[#6E706D]">
+              {columns.map((col) => (
+                <th key={col.key} className={cn('px-3 py-2.5 font-medium', col.className)}>
+                  {col.header}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        ) : null}
+        <tbody className="divide-y divide-[#F0F1EE]">
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-primary-500">
+              <td colSpan={columns.length} className="px-4 py-10 text-center text-[13px] text-[#7A7C78]">
                 {emptyMessage}
               </td>
             </tr>
@@ -108,10 +207,13 @@ export function DataTable<T>({
                 key={rowKey(row, idx)}
                 id={rowId ? rowId(row) : undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={cn('transition-colors', onRowClick && 'cursor-pointer hover:bg-primary-100/70')}
+                className={cn(
+                  'transition-colors',
+                  onRowClick && 'cursor-pointer hover:bg-[#F8F9F7]',
+                )}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={cn('px-3.5 py-3 align-middle', col.className)}>
+                  <td key={col.key} className={cn('px-3 py-3 align-middle', col.className)}>
                     {col.cell(row, idx)}
                   </td>
                 ))}
@@ -120,85 +222,12 @@ export function DataTable<T>({
           )}
         </tbody>
       </table>
+      {footer ? (
+        <div className="flex items-center justify-between border-t border-[#ECEEE9] px-4 py-2.5 text-[12px] text-[#6E706D]">
+          {footer}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-export type SegmentedOption<V extends string> = {
-  value: V;
-  label: React.ReactNode;
-  id?: string;
-};
-
-export function SegmentedControl<V extends string>({
-  options,
-  value,
-  onChange,
-  className,
-}: {
-  options: SegmentedOption<V>[];
-  value: V;
-  onChange: (next: V) => void;
-  className?: string;
-}): React.ReactElement {
-  return (
-    <div
-      role="tablist"
-      className={cn(
-        'inline-grid w-full grid-flow-col auto-cols-fr gap-1 rounded-lg border border-primary-200 bg-primary-100 p-1',
-        className,
-      )}
-    >
-      {options.map((opt) => {
-        const active = opt.value === value;
-        return (
-          <button
-            key={opt.value}
-            id={opt.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              'inline-flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors cursor-pointer',
-              active ? 'bg-surface text-ink shadow-2xs' : 'text-primary-600 hover:text-ink',
-            )}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export function MetadataField({ label, children }: { label: string; children: React.ReactNode }): React.ReactElement {
-  return (
-    <div className="space-y-1">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-primary-500">{label}</div>
-      <div className="text-[13px] text-ink">{children}</div>
-    </div>
-  );
-}
-
-export function MetadataRail({
-  ariaLabel,
-  children,
-  className,
-}: {
-  ariaLabel?: string;
-  children: React.ReactNode;
-  className?: string;
-}): React.ReactElement {
-  return (
-    <aside
-      aria-label={ariaLabel}
-      className={cn(
-        'sticky top-4 space-y-4 self-start rounded-xl border border-primary-200 bg-primary-50/70 p-4',
-        className,
-      )}
-    >
-      {children}
-    </aside>
-  );
-}

@@ -27,32 +27,55 @@ describe('@nightfall/api-gateway HTTP + SSE server', () => {
     expect(optRes.status).toBe(204);
     expect(optRes.headers.get('access-control-allow-origin')).toBe('*');
 
-    // GET /api/health exposes sandboxToolchain
+    // GET /api/health exposes sandboxToolchain and scorecardToolchain
     const healthRes = await fetch(`${baseUrl}/api/health`);
     expect(healthRes.status).toBe(200);
     const healthJson = (await healthRes.json()) as {
       status: string;
       sandboxToolchain: { available: boolean; southPlatform: string };
+      scorecardToolchain: { available: boolean; version: string | null };
     };
     expect(healthJson.status).toBe('ok');
     expect(healthJson.sandboxToolchain.available).toBe(true);
+    expect(healthJson.scorecardToolchain.available).toBe(true);
 
     // GET /api/bootstrap awaits ensureBootstrapped() automatically
     const bootRes = await fetch(`${baseUrl}/api/bootstrap`);
     expect(bootRes.status).toBe(200);
     const bootJson = (await bootRes.json()) as {
-      overview: { openFindingsCount: number };
+      overview: { openFindingsCount: number; averageScorecardScore?: number | null };
       findings: FindingRecord[];
       fixes: FixProposal[];
+      scorecardReports: Array<{ repository: string; aggregateScore: number }>;
       approvals: HitlApprovalRequest[];
       models: unknown[];
       sandboxToolchain: { available: boolean };
+      scorecardToolchain: { available: boolean };
     };
     expect(bootJson.overview.openFindingsCount).toBeGreaterThanOrEqual(8);
     expect(bootJson.findings.length).toBe(bootJson.overview.openFindingsCount);
     expect(bootJson.fixes.some((fx) => fx.sandboxBackend === 'microsoft-litebox')).toBe(true);
     expect(bootJson.sandboxToolchain.available).toBe(true);
+    expect(bootJson.scorecardToolchain.available).toBe(true);
+    expect(bootJson.scorecardReports.length).toBe(5);
     expect(bootJson.models.length).toBe(4);
+
+    // GET /api/scorecard/checks & POST /api/scorecard/scan
+    const checksRes = await fetch(`${baseUrl}/api/scorecard/checks`);
+    expect(checksRes.status).toBe(200);
+    const checksBody = (await checksRes.json()) as { checks: Array<{ name: string }> };
+    expect(checksBody.checks.some((c) => c.name === 'Dangerous-Workflow')).toBe(true);
+
+    const scScanRes = await fetch(`${baseUrl}/api/scorecard/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targetType: 'local',
+        repository: 'edge-ingress-mesh',
+        promoteFindings: false,
+      }),
+    });
+    expect(scScanRes.status).toBe(200);
 
     // Open GET /api/events SSE stream and capture streamed event when real scan runs
     const abortController = new AbortController();

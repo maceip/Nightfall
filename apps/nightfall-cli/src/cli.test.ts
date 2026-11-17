@@ -97,12 +97,31 @@ describe('@nightfall/nightfall-cli commands', () => {
       verifySignedCampaignManifest(signRes.signedManifest!, signRes.publicKeyPem!),
     ).toBe(true);
 
-    // 3. status (bootstraps real scanned workspace + Microsoft LiteBox proofs)
+    // 3. status (bootstraps real scanned workspace + Microsoft LiteBox + Nightfall Scorecard)
     const statusRes = await runNightfallCli(['status']);
     expect(statusRes.exitCode).toBe(0);
     expect(statusRes.stdout).toContain('Nightfall Platform Status');
     expect(statusRes.stdout).toContain('Microsoft LiteBox (ready');
+    expect(statusRes.stdout).toContain('Scorecard Engine  : Nightfall Scorecard');
     expect(statusRes.stdout).toMatch(/Open Findings\s+:\s+[1-9]\d*/);
+
+    // 3b. scorecard subcommand on a local workspace with a workflow
+    await fs.mkdir(path.join(tmpDir, '.github', 'workflows'), { recursive: true });
+    await fs.writeFile(
+      path.join(tmpDir, '.github', 'workflows', 'ci.yml'),
+      'name: CI\non: [push]\npermissions:\n  contents: read\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ok\n',
+      'utf8',
+    );
+    const scCliRes = await runNightfallCli([
+      'scorecard',
+      tmpDir,
+      '--checks',
+      'Dangerous-Workflow,Token-Permissions',
+      '--details',
+    ]);
+    expect(scCliRes.exitCode).toBe(0);
+    expect(scCliRes.stdout).toContain('Nightfall Scorecard · Supply-Chain & Repository Posture');
+    expect(scCliRes.stdout).toContain('Dangerous-Workflow');
 
     // 4. verify-audit on intact vs tampered ledger JSON
     const ledger = new AuditLedger();

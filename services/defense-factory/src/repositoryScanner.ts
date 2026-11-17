@@ -51,7 +51,7 @@ export interface ScanRepositoryInput {
   cloneUrl?: string;
   workspaceReposRoot?: string;
   mode?: 'cloud' | 'local';
-  method?: 'repository_scan' | 'continuous_monitoring' | 'scheduled_scan';
+  method?: 'repository_scan' | 'continuous_monitoring' | 'scheduled_scan' | 'scorecard_scan';
   scope?: 'full_repository' | 'specific_paths';
   paths?: string[];
   startingSequenceNumber?: number;

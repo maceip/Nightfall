@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
+import { HStack } from '@astryxdesign/core/HStack';
+import { VStack } from '@astryxdesign/core/VStack';
 import type { RepositoryRecord } from '@nightfall/core-contracts';
 import {
   Button,
+  ConnectedKpiStrip,
   DataTable,
   type DataTableColumn,
   FilterIcon,
   Input,
-  KpiCard,
+  ScorecardScorePill,
   SearchIcon,
-  SettingsIcon,
   StatusBadge,
 } from '@nightfall/ui-kit';
 
@@ -16,12 +18,14 @@ export type RepositoriesScreenProps = {
   repositories: RepositoryRecord[];
   onToggleRepoScans: (repoId: string) => Promise<void>;
   onQuickScanRepo: (repoName: string) => Promise<void>;
+  onOpenRepoScorecard?: (repoName: string) => void;
 };
 
 export function RepositoriesScreen({
   repositories,
   onToggleRepoScans,
   onQuickScanRepo,
+  onOpenRepoScorecard,
 }: RepositoriesScreenProps): React.ReactElement {
   const [search, setSearch] = useState('');
   const [onlyAttention, setOnlyAttention] = useState(false);
@@ -49,8 +53,10 @@ export function RepositoriesScreen({
       header: 'Repository',
       cell: (repo) => (
         <div>
-          <div className="font-medium text-ink">{repo.name}</div>
-          <div className="mt-0.5 text-xs text-primary-500">{repo.fullName}</div>
+          <div className="font-mono text-[13.5px] font-semibold text-ink">{repo.name}</div>
+          <div className="mt-0.5 text-xs text-ink-muted">
+            <span className="font-mono">{repo.fullName}</span> · {repo.ownerTeam}
+          </div>
         </div>
       ),
     },
@@ -77,60 +83,79 @@ export function RepositoriesScreen({
     {
       key: 'lastScan',
       header: 'Last completed scan',
-      cell: (repo) => <span className="text-primary-700">{repo.lastCompletedScanLabel}</span>,
+      cell: (repo) => <span className="text-[13px] text-ink-secondary">{repo.lastCompletedScanLabel}</span>,
     },
     {
-      key: 'owner',
-      header: 'Owner',
-      cell: (repo) => <span className="font-medium text-ink">{repo.ownerTeam}</span>,
+      key: 'scorecard',
+      header: 'Scorecard',
+      cell: (repo) => (
+        <button
+          id={`btn-repo-scorecard-${repo.name}`}
+          type="button"
+          onClick={() => onOpenRepoScorecard?.(repo.name)}
+          className="cursor-pointer bg-transparent p-0"
+          title={`Inspect Scorecard posture for ${repo.name}`}
+        >
+          <ScorecardScorePill score={repo.scorecardScore} />
+        </button>
+      ),
     },
     {
       key: 'actions',
-      header: '',
-      className: 'w-32 text-right whitespace-nowrap',
+      header: 'Actions',
+      className: 'w-44 text-right whitespace-nowrap',
       cell: (repo) => (
-        <div className="inline-flex items-center gap-1.5">
+        <HStack gap={1.5} align="center" justify="end">
           <Button
-            variant="ghost"
-            size="icon-sm"
-            title="Toggle scan schedule"
+            id={`btn-repo-toggle-pr-${repo.name}`}
+            variant="outline"
+            size="sm"
             onClick={() => void onToggleRepoScans(repo.id)}
           >
-            <SettingsIcon size={15} />
+            Toggle PR
           </Button>
           <Button
+            id={`btn-repo-scan-${repo.name}`}
             variant="outline"
             size="sm"
             onClick={() => void onQuickScanRepo(repo.name)}
           >
             Scan
           </Button>
-        </div>
+        </HStack>
       ),
     },
   ];
 
   return (
-    <div id="view-repositories" className="space-y-4 tabular-nums">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <KpiCard
-          label="PR review coverage"
-          value={prCovered}
-          suffix={`/ ${repositories.length}`}
-        />
-        <KpiCard
-          label="Scheduled scan coverage"
-          value={schedCovered}
-          suffix={`/ ${repositories.length}`}
-        />
-        <KpiCard label="Need attention" value={needAttention} />
-      </div>
+    <VStack id="view-repositories" gap={4} className="tabular-nums">
+      <ConnectedKpiStrip
+        cells={[
+          {
+            key: 'pr',
+            label: 'PR review coverage',
+            value: prCovered,
+            suffix: `/ ${repositories.length}`,
+          },
+          {
+            key: 'auto',
+            label: 'Automatic scans',
+            value: schedCovered,
+            suffix: `/ ${repositories.length}`,
+          },
+          {
+            key: 'attn',
+            label: 'Active fixes',
+            value: needAttention,
+          },
+        ]}
+      />
 
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="relative min-w-[240px] flex-1">
           <SearchIcon
             size={15}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-primary-500"
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted"
           />
           <Input
             id="input-search-repositories"
@@ -138,17 +163,17 @@ export function RepositoriesScreen({
             placeholder="Search repositories"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
+            className="rounded-full border-hairline-strong bg-canvas pl-9"
           />
         </div>
 
         <Button
           id="btn-filter-attention"
-          variant="outline"
+          variant={onlyAttention ? 'default' : 'outline'}
           onClick={() => setOnlyAttention((v) => !v)}
         >
           <FilterIcon size={14} />
-          <span>{onlyAttention ? `Showing attention (${needAttention})` : 'Filters'}</span>
+          <span>Needs attention ({needAttention})</span>
         </Button>
       </div>
 
@@ -159,6 +184,6 @@ export function RepositoriesScreen({
         rowId={(r) => `repo-row-${r.id}`}
         ariaLabel="Connected repositories"
       />
-    </div>
+    </VStack>
   );
 }

@@ -29,6 +29,9 @@
       "@nightfall/defense-factory": [
         "../../services/defense-factory/src/index.ts"
       ],
+      "@nightfall/scorecard": [
+        "../../services/scorecard/src/index.ts"
+      ],
       "@nightfall/closed-loop-orchestrator": [
         "../../services/closed-loop-orchestrator/src/index.ts"
       ],

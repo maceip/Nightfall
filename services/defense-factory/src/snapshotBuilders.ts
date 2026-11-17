@@ -916,7 +916,257 @@ test('prevents SQL tautology injection from leaking foreign tenant rows', () => 
     };
   }
 
-  // 7. Generic TypeScript / JavaScript fallback
+  // 7. Nightfall Scorecard workflow & supply-chain posture remediation (verified in Microsoft LiteBox)
+  if (
+    primary.sources.includes('scorecard') ||
+    refFile.endsWith('.yml') ||
+    refFile.endsWith('.yaml')
+  ) {
+    const workflowRelPath =
+      refFile.endsWith('.yml') || refFile.endsWith('.yaml')
+        ? refFile
+        : '.github/workflows/ci.yml';
+    const workflowDisk =
+      refFile === workflowRelPath
+        ? diskContent
+        : await tryReadRepoFile(workspaceReposRoot, primary.repository, workflowRelPath);
+    const targetFileName = path.posix.basename(workflowRelPath) || 'ci.yml';
+    const subtitleLower = `${primary.title} ${primary.subtitle} ${primary.weaknessCwe}`.toLowerCase();
+
+    if (subtitleLower.includes('dangerous-workflow') || subtitleLower.includes('cwe-78')) {
+      const unmodifiedSource =
+        workflowDisk && workflowDisk.includes('${{')
+          ? workflowDisk
+          : `name: CI
+on:
+  pull_request:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Log context
+        run: echo "Triaging \${{ github.event.issue.title }}"
+`;
+
+      let exprExpr = 'github.event.issue.title';
+      const exprMatch = /\$\{\{\s*(github\.event\.[^}\s]+)\s*\}\}/.exec(unmodifiedSource);
+      if (exprMatch?.[1]) {
+        exprExpr = exprMatch[1];
+      }
+
+      const lines = unmodifiedSource.split('\n');
+      const patchedLines: string[] = [];
+      const diffRemoved: string[] = [];
+      const diffAdded: string[] = [];
+
+      for (const line of lines) {
+        if (/^\s*(-\s*)?run:\s*/.test(line) && line.includes('${{')) {
+          const indentMatch = /^(\s*)/.exec(line);
+          const baseIndent = indentMatch?.[1] ?? '      ';
+          const envIndent = line.trimStart().startsWith('- ')
+            ? `${baseIndent}  `
+            : baseIndent;
+          const sanitizedLine = line.replace(
+            /\$\{\{\s*github\.event\.[^}]+\}\}/g,
+            '$NF_EVENT_CONTEXT',
+          );
+          const envHeader = `${envIndent}env:`;
+          const envVarLine = `${envIndent}  NF_EVENT_CONTEXT: \${{ ${exprExpr} }}`;
+          patchedLines.push(sanitizedLine, envHeader, envVarLine);
+          diffRemoved.push(`-${line}`);
+          diffAdded.push(`+${sanitizedLine}`, `+${envHeader}`, `+${envVarLine}`);
+        } else {
+          patchedLines.push(line);
+        }
+      }
+
+      const patchedSource = patchedLines.join('\n');
+      const unifiedDiff = [
+        `--- a/${workflowRelPath}`,
+        `+++ b/${workflowRelPath}`,
+        '@@ -1,14 +1,16 @@',
+        ...diffRemoved,
+        ...diffAdded,
+      ].join('\n');
+
+      return {
+        targetFileName,
+        repoFilePath: workflowRelPath,
+        repoSecurityTestPath: 'tests/test_workflow_script_injection_security.py',
+        unmodifiedSource,
+        patchedSource,
+        baselineTestFileName: 'baseline_workflow_test.py',
+        baselineTestSource: `import pathlib
+
+src = pathlib.Path(__file__).with_name("${targetFileName}").read_text(encoding="utf-8")
+assert "jobs:" in src, "workflow must define jobs"
+assert "steps:" in src, "workflow must define steps"
+assert "run:" in src, "workflow must preserve run command"
+`,
+        securityTestFileName: 'security_workflow_test.py',
+        securityTestSource: `import pathlib, re
+
+src = pathlib.Path(__file__).with_name("${targetFileName}").read_text(encoding="utf-8")
+for line in src.splitlines():
+    if re.match(r"^\\s*(-\\s*)?run:\\s*", line):
+        assert "\${{" not in line or "github.event." not in line, (
+            f"Untrusted github.event expression interpolated directly in shell run step: {line}"
+        )
+assert "NF_EVENT_CONTEXT:" in src, "Expected untrusted event expression bound via env variable"
+`,
+        unifiedDiff,
+        securityTestDiff: `+++ b/tests/test_workflow_script_injection_security.py
+@@ -0,0 +1,4 @@
++for line in open("${workflowRelPath}", encoding="utf-8"):
++    if "run:" in line:
++        assert "github.event." not in line`,
+        explanation:
+          'Binds untrusted `${{ github.event.* }}` metadata to a step-scoped `env` variable (`NF_EVENT_CONTEXT`) instead of interpolating directly into shell `run:` script text.',
+      };
+    }
+
+    if (subtitleLower.includes('pinned-dependencies') || subtitleLower.includes('cwe-829')) {
+      const unmodifiedSource =
+        workflowDisk && /uses:\s*[^\s@]+@v\d+/.test(workflowDisk)
+          ? workflowDisk
+          : `name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+`;
+      const SHA_PINS: Record<string, string> = {
+        'actions/checkout': '11bd71901bbe5b1630ceea73d27597364c9af683',
+        'actions/setup-node': '39370e3970a6d050c480ffad4ff0ed4d3fdee5af',
+        'actions/setup-python': '42375524e23c412d93fb67b49958b491fce71c38',
+        'actions/setup-go': 'd35c59abb061a4a6fb18e82ac0862c26744d6ab5',
+      };
+      const diffRemoved: string[] = [];
+      const diffAdded: string[] = [];
+      const patchedSource = unmodifiedSource
+        .split('\n')
+        .map((line) => {
+          const m = /^(\s*-\s*uses:\s*)([a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+)@(v[0-9.]+)(.*)$/.exec(
+            line,
+          );
+          if (!m) return line;
+          const actionName = m[2]!;
+          const sha =
+            SHA_PINS[actionName] ?? '11bd71901bbe5b1630ceea73d27597364c9af683';
+          const next = `${m[1]}${actionName}@${sha} # ${m[3]}`;
+          diffRemoved.push(`-${line}`);
+          diffAdded.push(`+${next}`);
+          return next;
+        })
+        .join('\n');
+
+      return {
+        targetFileName,
+        repoFilePath: workflowRelPath,
+        repoSecurityTestPath: 'tests/test_workflow_pinned_actions_security.py',
+        unmodifiedSource,
+        patchedSource,
+        baselineTestFileName: 'baseline_workflow_test.py',
+        baselineTestSource: `import pathlib
+src = pathlib.Path(__file__).with_name("${targetFileName}").read_text(encoding="utf-8")
+assert "jobs:" in src and "uses:" in src
+`,
+        securityTestFileName: 'security_workflow_test.py',
+        securityTestSource: `import pathlib, re
+src = pathlib.Path(__file__).with_name("${targetFileName}").read_text(encoding="utf-8")
+for line in src.splitlines():
+    m = re.search(r"uses:\\s*([^\\s#]+)", line)
+    if m and not m.group(1).startswith("./"):
+        ref = m.group(1).split("@", 1)[1]
+        assert re.fullmatch(r"[0-9a-f]{40}", ref), f"Unpinned action ref: {m.group(1)}"
+`,
+        unifiedDiff: [
+          `--- a/${workflowRelPath}`,
+          `+++ b/${workflowRelPath}`,
+          '@@ -1,10 +1,10 @@',
+          ...diffRemoved,
+          ...diffAdded,
+        ].join('\n'),
+        securityTestDiff: `+++ b/tests/test_workflow_pinned_actions_security.py
+@@ -0,0 +1,3 @@
++assert all(len(ref.split("@")[1]) == 40 for ref in workflow_uses)`,
+        explanation:
+          'Pins GitHub Actions `uses:` references to immutable full-length 40-character commit SHAs.',
+      };
+    }
+
+    // Default Scorecard workflow posture remediation: Token-Permissions least privilege
+    const unmodifiedSource =
+      workflowDisk && !/^permissions:/m.test(workflowDisk)
+        ? workflowDisk
+        : `name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: echo "ok"
+`;
+    const patchedLines: string[] = [];
+    let inserted = false;
+    for (const line of unmodifiedSource.split('\n')) {
+      if (!inserted && line.startsWith('jobs:')) {
+        patchedLines.push('permissions:', '  contents: read');
+        inserted = true;
+      }
+      patchedLines.push(line);
+    }
+    if (!inserted) {
+      patchedLines.unshift('permissions:', '  contents: read');
+    }
+    const patchedSource = patchedLines.join('\n');
+
+    return {
+      targetFileName,
+      repoFilePath: workflowRelPath,
+      repoSecurityTestPath: 'tests/test_workflow_token_permissions_security.py',
+      unmodifiedSource,
+      patchedSource,
+      baselineTestFileName: 'baseline_workflow_test.py',
+      baselineTestSource: `import pathlib
+src = pathlib.Path(__file__).with_name("${targetFileName}").read_text(encoding="utf-8")
+assert "jobs:" in src and "steps:" in src
+`,
+      securityTestFileName: 'security_workflow_test.py',
+      securityTestSource: `import pathlib, re
+src = pathlib.Path(__file__).with_name("${targetFileName}").read_text(encoding="utf-8")
+assert re.search(r"^permissions:\\s*\\n\\s+contents:\\s*read\\b", src, re.M), (
+    "Top-level read-only GITHUB_TOKEN permissions missing"
+)
+`,
+      unifiedDiff: [
+        `--- a/${workflowRelPath}`,
+        `+++ b/${workflowRelPath}`,
+        '@@ -1,4 +1,6 @@',
+        '+permissions:',
+        '+  contents: read',
+        ' jobs:',
+      ].join('\n'),
+      securityTestDiff: `+++ b/tests/test_workflow_token_permissions_security.py
+@@ -0,0 +1,2 @@
++assert "permissions:\\n  contents: read" in open("${workflowRelPath}").read()`,
+      explanation:
+        'Declares explicit top-level `permissions: contents: read` on the GitHub Actions workflow so `GITHUB_TOKEN` defaults to least privilege.',
+    };
+  }
+
+  // 8. Generic TypeScript / JavaScript fallback
   const isTs = refFile.endsWith('.ts') || refFile.endsWith('.tsx');
   const targetFileName = isTs ? 'handler_guard.ts' : 'handler_guard.mjs';
   const baselineTestFileName = isTs ? 'baseline.test.ts' : 'baseline.test.mjs';

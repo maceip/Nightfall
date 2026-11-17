@@ -242,6 +242,18 @@ const optionalLiteBoxExtraResources = existsSync(
     ]
   : [];
 
+const optionalScorecardExtraResources = existsSync(
+  resolve(desktopPackageRoot, `bundled-tools/${targetPlatformKey}/scorecard`),
+)
+  ? [
+      {
+        from: `bundled-tools/${targetPlatformKey}/scorecard`,
+        to: 'tools/scorecard',
+        filter: ['**/*'],
+      },
+    ]
+  : [];
+
 /** @type {import('electron-builder').Configuration} */
 export default {
   appId: desktopProductIdentity.appId,
@@ -274,6 +286,10 @@ export default {
     ...PACKAGING_PRUNE_PATTERNS,
     ...createDesktopNativePackagePrunePatterns(targetPlatformKey),
     '!node_modules/@nightfall/**',
+    '!node_modules/@astryxdesign/**',
+    '!node_modules/@stylexjs/**',
+    '!node_modules/@base-ui/**',
+    '!node_modules/lucide-react/**',
     '!node_modules/react/**',
     '!node_modules/react-dom/**',
   ],
@@ -310,6 +326,7 @@ export default {
       ? [{ from: 'build/icon.ico', to: 'tray_icon.ico' }]
       : []),
     ...optionalLiteBoxExtraResources,
+    ...optionalScorecardExtraResources,
   ],
   mac: {
     target: ['dmg'],
@@ -332,8 +349,6 @@ export default {
     background: 'build/dmg_background.png',
     icon: 'build/icon_installer.icns',
     contents: [
-      { x: 640, y: 56, type: 'file', path: '.background.tiff' },
-      { x: 640, y: 56, type: 'file', path: '.VolumeIcon.icns' },
       { x: 130, y: 220 },
       { x: 410, y: 220, type: 'link', path: '/Applications' },
     ],

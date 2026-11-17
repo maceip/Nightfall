@@ -44,7 +44,7 @@ env:
 jobs:
   verify:
     name: Typecheck, Unit/E2E Tests & Bundle Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Checkout Nightfall repository
@@ -61,10 +61,19 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
+      - name: Setup Go toolchain for vendored Nightfall Scorecard
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'vendor/scorecard/go.mod'
+          cache-dependency-path: 'vendor/scorecard/go.sum'
+
       - name: Install workspace dependencies
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
         run: pnpm install --no-frozen-lockfile
+
+      - name: Build vendored Nightfall Scorecard Go engine
+        run: pnpm build:scorecard
 
       - name: Generate desktop icon & DMG assets
         run: node scripts/generate-desktop-icons.mjs
@@ -74,7 +83,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/share/nightfall/litebox
-          key: litebox-${{ runner.os }}-${{ hashFiles('infra/litebox/build-litebox.sh') }}
+          key: litebox-${{ runner.os }}-24.04-${{ hashFiles('infra/litebox/build-litebox.sh') }}
 
       - name: Build Microsoft LiteBox toolchain (sandbox tests require it)
         if: steps.litebox-cache.outputs.cache-hit != 'true'
@@ -85,21 +94,6 @@ jobs:
           test -x "$HOME/.local/share/nightfall/litebox/bin/litebox_runner_linux_userland"
           test -x "$HOME/.local/share/nightfall/litebox/bin/litebox_packager"
           test -x "$HOME/.local/share/nightfall/litebox/bin/litebox_syscall_rewriter"
-
-      - name: LiteBox smoke diagnostics (non-blocking)
-        continue-on-error: true
-        run: |
-          BIN="$HOME/.local/share/nightfall/litebox/bin"
-          head -4 /etc/os-release; uname -r; ldd --version | head -1
-          CAT="$(readlink -f /usr/bin/cat)"; ls -l /usr/bin/cat "$CAT"; file "$CAT" || true
-          W="$(mktemp -d)"; printf 'litebox-smoke' > "$W/canary.txt"
-          "$BIN/litebox_packager" /usr/bin/cat --include "$W/canary.txt:/sandbox/canary.txt" -o "$W/b.tar"
-          set +e
-          "$BIN/litebox_runner_linux_userland" --unstable \
-            --env LD_LIBRARY_PATH=/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/lib64:/lib32:/lib \
-            --env HOME=/sandbox --env TMPDIR=/tmp --env LANG=C.UTF-8 \
-            --initial-files "$W/b.tar" --program-from-tar /usr/bin/cat /sandbox/canary.txt
-          echo "litebox cat exit=$?"
 
       - name: Set up Python for the Mantis engine
         uses: actions/setup-python@v5
@@ -122,6 +116,9 @@ jobs:
 
       - name: Build renderer & zcode-aligned Electron main/preload bundles
         run: pnpm --filter @nightfall/nightfall-ui run build:desktop
+
+      - name: Audit Facebook Astryx design system bundle
+        run: pnpm --filter @nightfall/nightfall-ui run astryx:doctor
 
   build-macos-dmg:
     name: Build Debug macOS DMG (${{ matrix.arch }})
@@ -147,6 +144,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
+      - name: Setup Go toolchain for vendored Nightfall Scorecard
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'vendor/scorecard/go.mod'
+          cache-dependency-path: 'vendor/scorecard/go.sum'
+
       - name: Cache Electron & electron-builder downloads
         uses: actions/cache@v4
         with:
@@ -159,6 +162,15 @@ jobs:
 
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
+
+      - name: Stage vendored Nightfall Scorecard binary for macOS (${{ matrix.arch }})
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.arch == 'x64' && 'amd64' || matrix.arch }}
+          NIGHTFALL_STAGE_DESKTOP_TOOLS: '1'
+          NIGHTFALL_TARGET_OS: darwin
+          NIGHTFALL_TARGET_ARCH: ${{ matrix.arch }}
+        run: bash infra/scorecard/build-scorecard.sh
 
       - name: Build & package Debug Electron .dmg (${{ matrix.arch }})
         env:
@@ -218,6 +230,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
 
+      - name: Setup Go toolchain for vendored Nightfall Scorecard
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'vendor/scorecard/go.mod'
+          cache-dependency-path: 'vendor/scorecard/go.sum'
+
       - name: Ensure WiX Toolset v3 is on PATH for electron-builder MSI packaging
         shell: pwsh
         run: |
@@ -256,6 +274,16 @@ jobs:
 
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
+
+      - name: Stage vendored Nightfall Scorecard binary for Windows (${{ matrix.arch }})
+        shell: bash
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          NIGHTFALL_STAGE_DESKTOP_TOOLS: '1'
+          NIGHTFALL_TARGET_OS: win32
+          NIGHTFALL_TARGET_ARCH: ${{ matrix.arch }}
+        run: bash infra/scorecard/build-scorecard.sh
 
       - name: Build & package Debug Electron .msi (${{ matrix.arch }})
         shell: pwsh

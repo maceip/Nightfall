@@ -185,11 +185,15 @@ async function ensureEmbeddedApiServer(): Promise<string> {
     mkdirSync(userDataDir, { recursive: true });
     process.env.NIGHTFALL_SQLITE_PATH ||= join(userDataDir, 'nightfall.sqlite');
 
-    // Prepend bundled tools directory (e.g. packaged LiteBox binaries) to PATH if present
+    // Prepend bundled tools directory (packaged LiteBox & Scorecard binaries) when running packaged
     if (app.isPackaged) {
       const bundledLiteBoxBin = join(process.resourcesPath, 'tools', 'litebox', 'bin');
       if (existsSync(bundledLiteBoxBin)) {
         process.env.NIGHTFALL_LITEBOX_BIN_DIR ||= bundledLiteBoxBin;
+      }
+      const bundledScorecardBin = join(process.resourcesPath, 'tools', 'scorecard', 'bin');
+      if (existsSync(bundledScorecardBin)) {
+        process.env.NIGHTFALL_SCORECARD_BIN_DIR ||= bundledScorecardBin;
       }
     }
 

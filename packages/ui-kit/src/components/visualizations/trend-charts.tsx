@@ -1,5 +1,5 @@
 import React from 'react';
-import type { CampaignActivityPoint } from '@nightfall/core-contracts';
+import type { CampaignActivityPoint, Severity } from '@nightfall/core-contracts';
 import { cn } from '../../lib/utils.js';
 
 export type DailyTrendPoint = {
@@ -7,6 +7,51 @@ export type DailyTrendPoint = {
   currentlyFixed: number;
   newFindings: number;
 };
+
+export function SeverityProportionalBars({
+  counts,
+  onSelectSeverity,
+  className,
+}: {
+  counts: Record<Severity, number>;
+  onSelectSeverity?: (severity: Severity) => void;
+  className?: string;
+}): React.ReactElement {
+  const rows: Array<{ key: Severity; label: string; color: string; count: number }> = [
+    { key: 'critical', label: 'Critical', color: '#EF1E28', count: Math.max(0, counts.critical || 0) },
+    { key: 'high', label: 'High', color: '#EB6836', count: Math.max(0, counts.high || 0) },
+    { key: 'medium', label: 'Medium', color: '#ECC147', count: Math.max(0, counts.medium || 0) },
+    { key: 'low', label: 'Low', color: '#2563EB', count: Math.max(0, counts.low || 0) },
+  ];
+  const maxVal = Math.max(1, ...rows.map((r) => r.count));
+
+  return (
+    <div className={cn('group/bars space-y-1.5 tabular-nums', className)}>
+      {rows.map((row) => {
+        const widthPct = row.count === 0 ? 2 : Math.max(5, Math.round((row.count / maxVal) * 100));
+        return (
+          <button
+            key={row.key}
+            type="button"
+            onClick={onSelectSeverity ? () => onSelectSeverity(row.key) : undefined}
+            className="grid w-full grid-cols-[72px_1fr_44px] items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-all group-hover/bars:opacity-35 hover:!opacity-100 hover:bg-[#F5F6F4] cursor-pointer"
+          >
+            <span className="text-[13px] font-medium text-[#434542]">{row.label}</span>
+            <span className="flex items-center">
+              <span
+                className="h-3.5 rounded-[4px] transition-all"
+                style={{ width: `${widthPct}%`, backgroundColor: row.color }}
+              />
+            </span>
+            <span className="text-right text-[13.5px] font-semibold text-[#141514]">
+              {row.count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function DailyTrendChart({
   data,
@@ -16,7 +61,7 @@ export function DailyTrendChart({
   className?: string;
 }): React.ReactElement {
   const width = 400;
-  const height = 124;
+  const height = 128;
   const padX = 8;
   const padY = 14;
 
@@ -39,7 +84,9 @@ export function DailyTrendChart({
   const span = Math.max(1, rawMax - rawMin);
 
   function toX(idx: number): number {
-    return Number((padX + (idx / Math.max(1, safePoints.length - 1)) * (width - padX * 2)).toFixed(1));
+    return Number(
+      (padX + (idx / Math.max(1, safePoints.length - 1)) * (width - padX * 2)).toFixed(1),
+    );
   }
 
   function toY(val: number): number {
@@ -57,14 +104,14 @@ export function DailyTrendChart({
     <div className={cn('space-y-2 tabular-nums', className)}>
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="w-full h-auto block"
+        className="block h-auto w-full"
         role="img"
         aria-label="7-day fixed vs new findings trend"
       >
         <defs>
           <linearGradient id="nfFixedTrendFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="oklch(0.58 0.16 150)" stopOpacity="0.2" />
-            <stop offset="100%" stopColor="oklch(0.58 0.16 150)" stopOpacity="0" />
+            <stop offset="0%" stopColor="#16A34A" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#16A34A" stopOpacity="0" />
           </linearGradient>
         </defs>
         <line
@@ -72,31 +119,26 @@ export function DailyTrendChart({
           y1={height - padY}
           x2={width - padX}
           y2={height - padY}
-          stroke="oklch(0.928 0.004 80)"
+          stroke="#ECEEE9"
           strokeWidth="1"
         />
         <path d={areaPath} fill="url(#nfFixedTrendFill)" />
         <polyline
           fill="none"
-          stroke="oklch(0.52 0.2 18)"
+          stroke="#D97706"
           strokeWidth="1.75"
           strokeDasharray="4 4"
           points={newPoints}
         />
-        <polyline
-          fill="none"
-          stroke="oklch(0.55 0.16 150)"
-          strokeWidth="2"
-          points={fixedPoints}
-        />
+        <polyline fill="none" stroke="#15803D" strokeWidth="2" points={fixedPoints} />
       </svg>
-      <div className="flex items-center gap-4 text-xs text-primary-600">
+      <div className="flex items-center gap-4 text-[12px] text-[#5E605D]">
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-0.5 w-3 rounded-full bg-emerald-600" />
+          <span className="h-0.5 w-3 rounded-full bg-[#15803D]" />
           <span>Currently fixed</span>
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-0.5 w-3 border-t-2 border-dashed border-rose-700" />
+          <span className="h-0.5 w-3 border-t-2 border-dashed border-[#D97706]" />
           <span>New findings</span>
         </span>
       </div>
@@ -116,7 +158,7 @@ export function CampaignActivityTimeline({
   className?: string;
 }): React.ReactElement {
   const width = 420;
-  const height = 44;
+  const height = 46;
   const safeSeries: CampaignActivityPoint[] =
     series.length >= 2
       ? series
@@ -127,59 +169,61 @@ export function CampaignActivityTimeline({
             { timestamp: 't1', requestsCount: 0, findingConfirmedTick: false },
           ];
   const maxReq = Math.max(...safeSeries.map((s) => s.requestsCount || 0), 10);
-  const points = safeSeries
-    .map((pt, idx) => {
-      const x = (idx / Math.max(1, safeSeries.length - 1)) * width;
-      const y = height - 4 - ((pt.requestsCount || 0) / maxReq) * (height - 10);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(' ');
+  const coords = safeSeries.map((pt, idx) => {
+    const x = (idx / Math.max(1, safeSeries.length - 1)) * width;
+    const y = height - 4 - ((pt.requestsCount || 0) / maxReq) * (height - 10);
+    return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)) };
+  });
+  const points = coords.map((c) => `${c.x},${c.y}`).join(' ');
+  const fillPath = `M 0 ${height - 2} L ${coords.map((c) => `${c.x} ${c.y}`).join(' L ')} L ${width} ${height - 2} Z`;
+
+  // Normalize barcode to 48 crisp vertical ticks matching Screenshots #6, #7, #8
+  const tickCount = 48;
+  const ticks = Array.from({ length: tickCount }, (_, idx) => {
+    const mappedIdx = Math.floor((idx / tickCount) * safeSeries.length);
+    return safeSeries[Math.min(safeSeries.length - 1, mappedIdx)]!;
+  });
 
   return (
-    <div className={cn('space-y-2.5 tabular-nums', className)}>
-      <div className="grid grid-cols-[76px_1fr] items-center gap-3">
-        <span className="text-xs font-medium text-primary-600">Activity</span>
+    <div className={cn('space-y-3 tabular-nums', className)}>
+      <div className="grid grid-cols-[78px_1fr] items-start gap-3">
+        <span className="pt-1 text-[12.5px] font-medium text-[#5E605D]">Activity</span>
         <div>
-          <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-11 block">
-            <line
-              x1="0"
-              y1={height - 2}
-              x2={width}
-              y2={height - 2}
-              stroke="oklch(0.928 0.004 80)"
-              strokeWidth="1"
-            />
-            <polyline
-              fill="none"
-              stroke="oklch(0.55 0.18 255)"
-              strokeWidth="1.75"
-              points={points}
-            />
+          <svg viewBox={`0 0 ${width} ${height}`} className="block h-11 w-full">
+            <defs>
+              <linearGradient id="nfActivityArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#1D74F5" stopOpacity="0.16" />
+                <stop offset="100%" stopColor="#1D74F5" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <line x1="0" y1={height - 2} x2={width} y2={height - 2} stroke="#E6E7E5" strokeWidth="1" />
+            <path d={fillPath} fill="url(#nfActivityArea)" />
+            <polyline fill="none" stroke="#1D74F5" strokeWidth="1.8" points={points} />
           </svg>
-          <div className="mt-0.5 flex justify-between text-[11px] text-primary-500">
+          <div className="mt-0.5 flex justify-between text-[11px] text-[#7A7C78]">
             <span>{startLabel}</span>
             <span>{endLabel}</span>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-[76px_1fr] items-center gap-3">
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-600">
-          <span className="size-2 rounded-full bg-emerald-600" />
+      <div className="grid grid-cols-[78px_1fr] items-center gap-3">
+        <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[#5E605D]">
+          <span className="size-2 rounded-full bg-[#15803D]" />
           <span>Findings</span>
         </span>
         <div
-          className="flex h-4 items-center gap-0.5"
+          className="flex h-4 items-center justify-between gap-[3px]"
           role="img"
           aria-label="Confirmed findings timeline ticks"
         >
-          {safeSeries.map((pt, idx) => (
+          {ticks.map((pt, idx) => (
             <span
               key={idx}
               title={`${pt.timestamp}: ${pt.requestsCount} reqs${pt.findingConfirmedTick ? ' · Finding confirmed' : ''}`}
               className={cn(
-                'h-3.5 flex-1 rounded-[1px]',
-                pt.findingConfirmedTick ? 'bg-emerald-600' : 'bg-primary-200',
+                'h-3.5 w-[3px] rounded-full',
+                pt.findingConfirmedTick ? 'bg-[#15803D]' : 'bg-[#D8DAD7]',
               )}
             />
           ))}
@@ -197,7 +241,8 @@ export function BudgetSignalBars({
   className?: string;
 }): React.ReactElement {
   const safePct = Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
-  const activeBars = safePct >= 75 ? 4 : safePct >= 50 ? 3 : safePct >= 25 ? 2 : safePct > 0 ? 1 : 0;
+  const activeBars =
+    safePct >= 85 ? 4 : safePct >= 60 ? 3 : safePct >= 30 ? 2 : safePct > 0 ? 1 : 0;
   const barClasses = ['h-1.5', 'h-2.5', 'h-3.5', 'h-4'];
 
   return (
@@ -205,21 +250,21 @@ export function BudgetSignalBars({
       title={`Campaign budget remaining: ${safePct}%`}
       className={cn('inline-flex items-center gap-2 tabular-nums', className)}
     >
-      <div className="inline-flex items-end gap-0.5" aria-hidden="true">
+      <div className="inline-flex items-end gap-[2.5px]" aria-hidden="true">
         {barClasses.map((heightCls, idx) => (
           <span
             key={idx}
             className={cn(
-              'w-1 rounded-[1px]',
+              'w-[3.5px] rounded-[1px]',
               heightCls,
-              idx < activeBars ? 'bg-emerald-600' : 'bg-primary-300',
+              idx < activeBars ? 'bg-[#15803D]' : 'bg-[#D4D6D2]',
             )}
           />
         ))}
       </div>
-      <div className="text-xs text-primary-700">
-        <span className="font-semibold text-ink">{safePct}%</span>{' '}
-        <span className="text-primary-500">Left</span>
+      <div className="leading-tight text-[11.5px]">
+        <span className="font-bold text-[#15803D]">{safePct}%</span>{' '}
+        <span className="text-[#6E706D]">Left</span>
       </div>
     </div>
   );

@@ -1,5 +1,9 @@
 import http from 'node:http';
-import { NewScanRequestSchema, type SignedScopeManifest } from '@nightfall/core-contracts';
+import {
+  NewScanRequestSchema,
+  ScorecardScanRequestSchema,
+  type SignedScopeManifest,
+} from '@nightfall/core-contracts';
 import { NightfallOrchestrator } from '@nightfall/closed-loop-orchestrator';
 
 export const PACKAGE_NAME = '@nightfall/api-gateway';
@@ -78,6 +82,7 @@ export function createApiServer(
           timestamp: new Date().toISOString(),
           killSwitchEngaged: orchestrator.policyGate.isKillSwitchEngaged(),
           sandboxToolchain: orchestrator.sandboxRuntime.getToolchainStatus(),
+          scorecardToolchain: orchestrator.scorecardService.getToolchainStatus(),
         });
         return;
       }
@@ -126,6 +131,25 @@ export function createApiServer(
         return;
       }
 
+      if (method === 'GET' && pathname === '/api/scorecard/reports') {
+        sendJson(res, 200, { reports: orchestrator.store.listScorecardReports() });
+        return;
+      }
+
+      if (method === 'GET' && pathname === '/api/scorecard/checks') {
+        const checks = await orchestrator.listScorecardChecks();
+        sendJson(res, 200, { checks });
+        return;
+      }
+
+      if (method === 'POST' && pathname === '/api/scorecard/scan') {
+        const body = await readJsonBody(req);
+        const parsedReq = ScorecardScanRequestSchema.parse(body);
+        const result = await orchestrator.runScorecardScan(parsedReq);
+        sendJson(res, 200, result);
+        return;
+      }
+
       if (method === 'POST' && pathname === '/api/scans') {
         const body = await readJsonBody(req);
         const parsedReq = NewScanRequestSchema.parse(body);
@@ -170,9 +194,23 @@ export function createApiServer(
       const mergeMatch = /^\/api\/fixes\/([^/]+)\/merge-and-verify$/.exec(pathname);
       if (mergeMatch && method === 'POST') {
         const fixId = decodeURIComponent(mergeMatch[1]!);
-        await readJsonBody(req);
-        const { fix, finding, overview } = await orchestrator.mergeAndVerifyFix(fixId);
-        sendJson(res, 200, { fix, finding, overview });
+        const body = await readJsonBody(req);
+        const signedManifest =
+          body.signedManifest && typeof body.signedManifest === 'object'
+            ? (body.signedManifest as SignedScopeManifest)
+            : undefined;
+        const { fix, finding, overview, scorecardReport, repositories } =
+          await orchestrator.mergeAndVerifyFix(
+            fixId,
+            signedManifest ? { signedManifest } : undefined,
+          );
+        sendJson(res, 200, {
+          fix,
+          finding,
+          overview,
+          ...(scorecardReport ? { scorecardReport } : {}),
+          repositories,
+        });
         return;
       }
 

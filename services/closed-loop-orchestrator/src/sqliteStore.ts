@@ -10,6 +10,7 @@ import {
   RedTeamCampaignRunSchema,
   RepositoryRecordSchema,
   ScanJobRecordSchema,
+  ScorecardReportRecordSchema,
   type AuditEntry,
   type EvidenceBundle,
   type FindingRecord,
@@ -18,6 +19,7 @@ import {
   type RedTeamCampaignRun,
   type RepositoryRecord,
   type ScanJobRecord,
+  type ScorecardReportRecord,
 } from '@nightfall/core-contracts';
 
 type OrderedTable =
@@ -25,6 +27,7 @@ type OrderedTable =
   | 'findings'
   | 'fixes'
   | 'scans'
+  | 'scorecard_reports'
   | 'campaigns'
   | 'evidence_bundles'
   | 'hitl_approvals';
@@ -79,6 +82,13 @@ export class NightfallSqliteStore {
         sort_order INTEGER NOT NULL,
         repository TEXT NOT NULL,
         status TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS scorecard_reports (
+        id TEXT PRIMARY KEY,
+        sort_order INTEGER NOT NULL,
+        repository TEXT NOT NULL,
         payload_json TEXT NOT NULL
       );
 
@@ -463,6 +473,46 @@ export class NightfallSqliteStore {
       .prepare('SELECT payload_json FROM audit_entries ORDER BY idx ASC')
       .all() as Array<{ payload_json: string }>;
     return rows.map((row) => AuditEntrySchema.parse(JSON.parse(row.payload_json)));
+  }
+
+  upsertScorecardReport(
+    report: ScorecardReportRecord,
+    placement: 'front' | 'back' = 'front',
+  ): ScorecardReportRecord {
+    const validated = ScorecardReportRecordSchema.parse(report);
+    if (this.closed) return validated;
+    const sortOrder = this.resolveSortOrder('scorecard_reports', validated.id, placement);
+    this.db
+      .prepare(
+        `INSERT INTO scorecard_reports (id, sort_order, repository, payload_json)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           repository = excluded.repository,
+           payload_json = excluded.payload_json`,
+      )
+      .run(validated.id, sortOrder, validated.repository, JSON.stringify(validated));
+    return validated;
+  }
+
+  getScorecardReport(idOrRepository: string): ScorecardReportRecord | undefined {
+    if (this.closed) return undefined;
+    const row = this.db
+      .prepare(
+        'SELECT payload_json FROM scorecard_reports WHERE id = ? OR repository = ? LIMIT 1',
+      )
+      .get(idOrRepository, idOrRepository) as { payload_json?: string } | undefined;
+    if (!row?.payload_json) {
+      return undefined;
+    }
+    return ScorecardReportRecordSchema.parse(JSON.parse(row.payload_json));
+  }
+
+  listScorecardReports(): ScorecardReportRecord[] {
+    if (this.closed) return [];
+    const rows = this.db
+      .prepare('SELECT payload_json FROM scorecard_reports ORDER BY sort_order ASC, id ASC')
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => ScorecardReportRecordSchema.parse(JSON.parse(row.payload_json)));
   }
 
   close(): void {

@@ -352,9 +352,25 @@ async function findExistingAncestor(targetPath: string, stopAt: string): Promise
   return stopAt;
 }
 
+function preferLiteBoxCompatibleCoreutil(candidate: string): string {
+  try {
+    const real = fsSync.realpathSync(candidate);
+    if (real.includes('/cargo/bin/coreutils/')) {
+      const utilName = path.basename(candidate);
+      const gnuCandidate = path.join(path.dirname(candidate), `gnu${utilName}`);
+      if (isExecutableFileSync(gnuCandidate)) {
+        return gnuCandidate;
+      }
+    }
+  } catch {
+    // Keep original candidate if realpath fails
+  }
+  return candidate;
+}
+
 function resolveHostElfBinary(command: string): string | null {
   if (path.isAbsolute(command)) {
-    return isExecutableFileSync(command) ? command : null;
+    return isExecutableFileSync(command) ? preferLiteBoxCompatibleCoreutil(command) : null;
   }
 
   const searchDirs = (process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin')
@@ -364,7 +380,7 @@ function resolveHostElfBinary(command: string): string | null {
   for (const dir of searchDirs) {
     const candidate = path.join(dir, command);
     if (isExecutableFileSync(candidate)) {
-      return candidate;
+      return preferLiteBoxCompatibleCoreutil(candidate);
     }
   }
   return null;

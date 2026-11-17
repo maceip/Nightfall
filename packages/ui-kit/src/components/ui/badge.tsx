@@ -3,29 +3,40 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import type { Severity } from '@nightfall/core-contracts';
 import { cn } from '../../lib/utils.js';
 
+// Exact borderless rounded-[6px] pills matched to the 19 uploaded Nightfall reference screenshots:
+// - Critical: soft rose (#FAE5E5 / #9E2A2B)
+// - High: warm peach (#FAE6DC / #9A3412)
+// - Medium: warm gold (#F8EFD4 / #855A15)
+// - Low: sky tint (#DCEEFB / #1D588F)
+// - Proposed / New / Triaged / Not recorded: neutral gray (#EFEFED / #373936)
+// - In Progress: cobalt tint (#E1EFFE / #1E5AA8)
+// - Enabled / Merged / Fixed / Verified: mint green (#DCFCE7 / #166534)
+// - Lavender New tag: (#EFE6FD / #6E42C1)
 export const badgeVariants = cva(
-  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium leading-4 whitespace-nowrap tabular-nums',
+  'inline-flex items-center gap-1 rounded-[6px] border-0 px-2 py-0.5 text-[12px] font-semibold leading-4 whitespace-nowrap tabular-nums',
   {
     variants: {
       variant: {
-        critical: 'border-rose-200 bg-rose-50 text-rose-800',
-        high: 'border-orange-200 bg-orange-50 text-orange-800',
-        medium: 'border-amber-200 bg-amber-50 text-amber-800',
-        low: 'border-blue-200 bg-blue-50 text-blue-800',
-        informational: 'border-primary-200 bg-primary-100 text-primary-700',
-        new: 'border-primary-200 bg-primary-100 text-primary-700',
-        triaged: 'border-sky-200 bg-sky-50 text-sky-800',
-        in_progress: 'border-blue-200 bg-blue-50 text-blue-800',
-        proposed: 'border-indigo-200 bg-indigo-50 text-indigo-800',
-        merged: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-        suppressed: 'border-primary-200 bg-primary-100 text-primary-600',
-        fixed: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-        discarded_fp: 'border-primary-200 bg-primary-100 text-primary-600',
-        verified: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-        verifying: 'border-amber-200 bg-amber-50 text-amber-800',
-        not_recorded: 'border-primary-200 bg-primary-100 text-primary-600',
-        enabled: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-        accent: 'border-blue-200 bg-blue-50 text-blue-700',
+        critical: 'bg-[#FAE5E5] text-[#9E2A2B]',
+        high: 'bg-[#FAE6DC] text-[#9A3412]',
+        medium: 'bg-[#F8EFD4] text-[#855A15]',
+        low: 'bg-[#DCEEFB] text-[#1D588F]',
+        informational: 'bg-[#EFEFED] text-[#4A4C49]',
+        new: 'bg-[#EFEFED] text-[#4A4C49]',
+        triaged: 'bg-[#EFEFED] text-[#4A4C49]',
+        in_progress: 'bg-[#E1EFFE] text-[#1E5AA8]',
+        proposed: 'bg-[#EFEFED] text-[#373936]',
+        merged: 'bg-[#DCFCE7] text-[#166534]',
+        suppressed: 'bg-[#EFEFED] text-[#5E605D]',
+        fixed: 'bg-[#DCFCE7] text-[#166534]',
+        discarded_fp: 'bg-[#EFEFED] text-[#5E605D]',
+        verified: 'bg-[#DCFCE7] text-[#166534]',
+        verifying: 'bg-[#F8EFD4] text-[#855A15]',
+        not_recorded: 'bg-[#EFEFED] text-[#4A4C49]',
+        enabled: 'bg-[#DCFCE7] text-[#166534]',
+        accent: 'bg-[#E1EFFE] text-[#1E5AA8]',
+        lavender: 'rounded-full bg-[#EFE6FD] px-2 py-0.5 text-[11px] text-[#6E42C1]',
+        preview: 'rounded-full bg-[#FEF3C7] px-2.5 py-0.5 text-[11px] text-[#92400E]',
       },
     },
     defaultVariants: {
@@ -98,6 +109,8 @@ export function StatusBadge({
     'not_recorded',
     'enabled',
     'accent',
+    'lavender',
+    'preview',
   ]);
   const mapped: BadgeVariant = knownVariants.has(status)
     ? (status as BadgeVariant)

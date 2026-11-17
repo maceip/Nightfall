@@ -77,6 +77,7 @@ export default defineConfig([
       '@nightfall/closed-loop-orchestrator',
       '@nightfall/red-team',
       '@nightfall/defense-factory',
+      '@nightfall/scorecard',
       '@nightfall/sandbox-runtime',
       '@nightfall/policy-gate',
       '@nightfall/shared-memory',

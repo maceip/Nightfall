@@ -1,0 +1,299 @@
+// Copyright 2021 OpenSSF Scorecard Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package raw
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+
+	"github.com/ossf/scorecard/v5/checker"
+	"github.com/ossf/scorecard/v5/checks/fileparser"
+	"github.com/ossf/scorecard/v5/finding"
+	"github.com/ossf/scorecard/v5/internal/ghworkflow"
+)
+
+func containsUntrustedContextPattern(variable string) bool {
+	// GitHub event context details that may be attacker controlled.
+	// See https://securitylab.github.com/research/github-actions-untrusted-input/
+	untrustedContextPattern := regexp.MustCompile(
+		`.*(issue\.title|` +
+			`issue\.body|` +
+			`pull_request\.title|` +
+			`pull_request\.body|` +
+			`discussion\.title|` +
+			`discussion\.body|` +
+			`comment\.body|` +
+			`review\.body|` +
+			`review_comment\.body|` +
+			`pages.*\.page_name|` +
+			`commits.*\.message|` +
+			`head_commit\.message|` +
+			`head_commit\.author\.email|` +
+			`head_commit\.author\.name|` +
+			`commits.*\.author\.email|` +
+			`commits.*\.author\.name|` +
+			`blocked_user\.name|` +
+			`blocked_user\.email|` +
+			`pull_request\.head\.ref|` +
+			`pull_request\.head\.label|` +
+			`pull_request\.head\.repo\.default_branch).*`)
+
+	if strings.Contains(variable, "github.head_ref") {
+		return true
+	}
+	// Check for toJSON() serializing github context or event objects.
+	// These contain untrusted data and are dangerous in shell contexts.
+	// See https://github.com/ossf/scorecard/issues/3554
+	dangerousToJSONPattern := regexp.MustCompile(`(?i)tojson\s*\(\s*github(\.event)?\s*\)`)
+	if dangerousToJSONPattern.MatchString(variable) {
+		return true
+	}
+	return strings.Contains(variable, "github.event.") && untrustedContextPattern.MatchString(variable)
+}
+
+type triggerName string
+
+var (
+	triggerPullRequestTarget        = triggerName("pull_request_target")
+	triggerWorkflowRun              = triggerName("workflow_run")
+	checkoutUntrustedPullRequestRef = "github.event.pull_request"
+	checkoutUntrustedWorkflowRunRef = "github.event.workflow_run"
+)
+
+// DangerousWorkflow retrieves the raw data for the DangerousWorkflow check.
+func DangerousWorkflow(c *checker.CheckRequest) (checker.DangerousWorkflowData, error) {
+	// data is shared across all GitHub workflows.
+	var data checker.DangerousWorkflowData
+	err := fileparser.OnMatchingFileContentDo(c.RepoClient, fileparser.PathMatcher{
+		Pattern:       ".github/workflows/*",
+		CaseSensitive: false,
+	}, validateGitHubActionWorkflowPatterns, &data, c.Dlogger)
+
+	return data, err
+}
+
+// Check file content.
+var validateGitHubActionWorkflowPatterns fileparser.DoWhileTrueOnFileContent = func(path string,
+	content []byte,
+	args ...interface{},
+) (bool, error) {
+	if !fileparser.IsWorkflowFile(path) {
+		return true, nil
+	}
+
+	if len(args) != 1 && len(args) != 2 {
+		return false, fmt.Errorf(
+			"validateGitHubActionWorkflowPatterns requires 1 or 2 arguments: %w", errInvalidArgLength)
+	}
+
+	// Verify the type of the data.
+	pdata, ok := args[0].(*checker.DangerousWorkflowData)
+	if !ok {
+		return false, fmt.Errorf(
+			"validateGitHubActionWorkflowPatterns expects arg[0] of type *patternCbData: %w", errInvalidArgType)
+	}
+
+	if !fileparser.CheckFileContainsCommands(content, "#") {
+		return true, nil
+	}
+
+	pdata.NumWorkflows += 1
+
+	workflow, errs := ghworkflow.Parse(content)
+	if len(errs) > 0 && workflow == nil {
+		return false, fileparser.FormatActionlintError(errs)
+	}
+
+	// 1. Check for untrusted code checkout with pull_request_target and a ref
+	if err := validateUntrustedCodeCheckout(workflow, path, pdata); err != nil {
+		return false, err
+	}
+
+	// The optional second argument is the check's detail logger.
+	var dl checker.DetailLogger
+	if len(args) == 2 {
+		if l, ok := args[1].(checker.DetailLogger); ok {
+			dl = l
+		}
+	}
+
+	// 2. Check for script injection in workflow inline scripts.
+	validateScriptInjection(workflow, path, pdata, dl)
+
+	// TODO: Check other dangerous patterns.
+	return true, nil
+}
+
+func validateUntrustedCodeCheckout(workflow *ghworkflow.Workflow, path string,
+	pdata *checker.DangerousWorkflowData,
+) error {
+	if !usesEventTrigger(workflow, triggerPullRequestTarget) && !usesEventTrigger(workflow, triggerWorkflowRun) {
+		return nil
+	}
+
+	for _, job := range workflow.Jobs {
+		if err := checkJobForUntrustedCodeCheckout(job, path, pdata); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func usesEventTrigger(workflow *ghworkflow.Workflow, name triggerName) bool {
+	// Check if the webhook event trigger is a pull_request_target
+	for _, event := range workflow.On {
+		if event.EventName() == string(name) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func createJob(job *ghworkflow.Job) *checker.WorkflowJob {
+	if job == nil {
+		return nil
+	}
+	var r checker.WorkflowJob
+	if job.Name != nil {
+		r.Name = &job.Name.Value
+	}
+	if job.ID != nil {
+		r.ID = &job.ID.Value
+	}
+	return &r
+}
+
+func checkJobForUntrustedCodeCheckout(job *ghworkflow.Job, path string,
+	pdata *checker.DangerousWorkflowData,
+) error {
+	if job == nil {
+		return nil
+	}
+
+	// Check each step, which is a map, for checkouts with untrusted ref
+	for _, step := range job.Steps {
+		if step == nil || step.Exec == nil {
+			continue
+		}
+		// Check for a step that uses actions/checkout
+		e, ok := step.Exec.(*ghworkflow.ExecAction)
+		if !ok || e.Uses == nil {
+			continue
+		}
+		if !strings.Contains(e.Uses.Value, "actions/checkout") {
+			continue
+		}
+		// Check for reference. If not defined for a pull_request_target event, this defaults to
+		// the base branch of the pull request.
+		ref, ok := e.Inputs["ref"]
+		if !ok || ref.Value == nil {
+			continue
+		}
+
+		if strings.Contains(ref.Value.Value, checkoutUntrustedPullRequestRef) ||
+			strings.Contains(ref.Value.Value, checkoutUntrustedWorkflowRunRef) {
+			line := fileparser.GetLineNumber(step.Pos)
+			pdata.Workflows = append(pdata.Workflows,
+				checker.DangerousWorkflow{
+					Type: checker.DangerousWorkflowUntrustedCheckout,
+					File: checker.File{
+						Path:    path,
+						Type:    finding.FileTypeSource,
+						Offset:  line,
+						Snippet: ref.Value.Value,
+					},
+					Job: createJob(job),
+				},
+			)
+		}
+	}
+	return nil
+}
+
+func validateScriptInjection(workflow *ghworkflow.Workflow, path string,
+	pdata *checker.DangerousWorkflowData, dl checker.DetailLogger,
+) {
+	for _, job := range workflow.Jobs {
+		if job == nil {
+			continue
+		}
+		for _, step := range job.Steps {
+			if step == nil {
+				continue
+			}
+			run, ok := step.Exec.(*ghworkflow.ExecRun)
+			if !ok || run.Run == nil {
+				continue
+			}
+			// Check Run *String for user-controllable (untrustworthy) properties.
+			if !checkVariablesInScript(run.Run.Value, run.Run.Pos, job, path, pdata) && dl != nil {
+				// GitHub rejects a workflow with an unclosed expression, so it can't
+				// run. Note it and keep checking the other workflows.
+				dl.Debug(&checker.LogMessage{
+					Path:   path,
+					Type:   finding.FileTypeSource,
+					Offset: fileparser.GetLineNumber(run.Run.Pos),
+					Text:   "invalid workflow: unclosed ${{ expression in a run script",
+				})
+			}
+		}
+	}
+}
+
+// checkVariablesInScript records script injections in script. It returns false if
+// script has a ${{ with no closing }}.
+func checkVariablesInScript(script string, pos *ghworkflow.Pos,
+	job *ghworkflow.Job, path string,
+	pdata *checker.DangerousWorkflowData,
+) bool {
+	for {
+		s := strings.Index(script, "${{")
+		if s == -1 {
+			break
+		}
+
+		e := strings.Index(script[s:], "}}")
+		if e == -1 {
+			// No closing delimiter means there's no complete expression left to
+			// inspect. Stop scanning this script instead of failing the whole
+			// check, so one malformed workflow can't suppress script-injection
+			// detection in every other workflow file.
+			return false
+		}
+
+		// Check if the variable may be untrustworthy.
+		variable := script[s+3 : s+e]
+		if containsUntrustedContextPattern(variable) {
+			line := fileparser.GetLineNumber(pos)
+			pdata.Workflows = append(pdata.Workflows,
+				checker.DangerousWorkflow{
+					File: checker.File{
+						Path:    path,
+						Type:    finding.FileTypeSource,
+						Offset:  line,
+						Snippet: variable,
+					},
+					Job:  createJob(job),
+					Type: checker.DangerousWorkflowScriptInjection,
+				},
+			)
+		}
+		script = script[s+e:]
+	}
+	return true
+}

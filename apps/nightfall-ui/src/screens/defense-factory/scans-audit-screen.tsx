@@ -1,7 +1,12 @@
 import React from 'react';
+import { Code } from '@astryxdesign/core/Code';
+import { HStack } from '@astryxdesign/core/HStack';
+import { StatusDot } from '@astryxdesign/core/StatusDot';
+import { VStack } from '@astryxdesign/core/VStack';
 import type { AuditEntry, ScanJobRecord } from '@nightfall/core-contracts';
 import {
   Button,
+  ConnectedKpiStrip,
   DataTable,
   type DataTableColumn,
   PlusIcon,
@@ -24,31 +29,34 @@ export function ScansAuditScreen({
   auditEntries,
   onOpenNewScan,
 }: ScansAuditScreenProps): React.ReactElement {
+  const completedCount = scans.filter((s) => s.status === 'completed').length;
+  const totalDiscovered = scans.reduce((acc, s) => acc + (s.findingsDiscovered || 0), 0);
+
   const scanColumns: DataTableColumn<ScanJobRecord>[] = [
     {
       key: 'id',
       header: 'Scan ID',
-      cell: (sc) => <span className="font-mono text-xs">{sc.id}</span>,
+      cell: (sc) => <Code size="inherit">{sc.id}</Code>,
     },
     {
       key: 'repo',
       header: 'Repository',
-      cell: (sc) => <span className="font-medium text-ink">{sc.repository}</span>,
+      cell: (sc) => <span className="font-mono text-[13px] font-medium text-ink">{sc.repository}</span>,
     },
     {
       key: 'mode',
       header: 'Execution Mode',
-      cell: (sc) => <span>Nightfall · {formatHuman(sc.mode)}</span>,
+      cell: (sc) => <span className="text-ink-secondary">Nightfall · {formatHuman(sc.mode)}</span>,
     },
     {
       key: 'method',
       header: 'Method',
-      cell: (sc) => <span>{formatHuman(sc.method)}</span>,
+      cell: (sc) => <span className="text-ink-secondary">{formatHuman(sc.method)}</span>,
     },
     {
       key: 'findings',
       header: 'Findings',
-      cell: (sc) => <span className="font-medium">{sc.findingsDiscovered}</span>,
+      cell: (sc) => <span className="font-semibold text-ink">{sc.findingsDiscovered}</span>,
     },
     {
       key: 'status',
@@ -62,7 +70,7 @@ export function ScansAuditScreen({
       key: 'index',
       header: '#',
       className: 'w-14',
-      cell: (entry) => <span className="font-mono text-xs text-primary-600">{entry.index}</span>,
+      cell: (entry) => <span className="font-mono text-xs text-ink-muted">{entry.index}</span>,
     },
     {
       key: 'subsystem',
@@ -74,19 +82,19 @@ export function ScansAuditScreen({
       key: 'action',
       header: 'Action',
       className: 'w-48',
-      cell: (entry) => <span className="font-mono text-xs">{entry.action}</span>,
+      cell: (entry) => <Code size="inherit">{entry.action}</Code>,
     },
     {
       key: 'summary',
       header: 'Summary',
-      cell: (entry) => <span className="text-primary-800">{entry.summary}</span>,
+      cell: (entry) => <span className="text-ink-secondary">{entry.summary}</span>,
     },
     {
       key: 'hash',
       header: 'Chain Digest',
       className: 'w-40',
       cell: (entry) => (
-        <span className="font-mono text-xs text-primary-500" title={entry.hash}>
+        <span className="font-mono text-xs text-ink-muted" title={entry.hash}>
           {entry.hash.slice(0, 14)}…
         </span>
       ),
@@ -94,8 +102,16 @@ export function ScansAuditScreen({
   ];
 
   return (
-    <div id="view-scans" className="space-y-6 tabular-nums">
-      <section>
+    <VStack id="view-scans" gap={5} className="tabular-nums">
+      <ConnectedKpiStrip
+        cells={[
+          { key: 'scans', label: 'Completed scans', value: completedCount, suffix: `/ ${scans.length}` },
+          { key: 'findings', label: 'Findings discovered', value: totalDiscovered },
+          { key: 'audit', label: 'Verified audit entries', value: auditEntries.length },
+        ]}
+      />
+
+      <section className="space-y-3">
         <SectionHeader
           title="Recent repository & continuous scans"
           actions={
@@ -105,26 +121,35 @@ export function ScansAuditScreen({
             </Button>
           }
         />
-        <DataTable
-          columns={scanColumns}
-          rows={scans}
-          rowKey={(sc) => sc.id}
-          ariaLabel="Repository scan jobs"
-        />
+        <div className="overflow-hidden rounded-2xl border border-hairline bg-canvas">
+          <DataTable
+            columns={scanColumns}
+            rows={scans}
+            rowKey={(sc) => sc.id}
+            ariaLabel="Repository scan jobs"
+          />
+        </div>
       </section>
 
-      <section>
+      <section className="space-y-3">
         <SectionHeader
           title={`Immutable Hash-Chained Audit Ledger (${auditEntries.length} records)`}
-          actions={<StatusBadge status="verified" label="SHA-256 Chain Verified ✓" />}
+          actions={
+            <HStack gap={2} align="center">
+              <StatusDot variant="success" label="SHA-256 chain verified" />
+              <StatusBadge status="verified" label="SHA-256 Chain Verified ✓" />
+            </HStack>
+          }
         />
-        <DataTable
-          columns={auditColumns}
-          rows={auditEntries}
-          rowKey={(entry) => entry.id}
-          ariaLabel="Cryptographic SHA-256 audit ledger"
-        />
+        <div className="overflow-hidden rounded-2xl border border-hairline bg-canvas">
+          <DataTable
+            columns={auditColumns}
+            rows={auditEntries}
+            rowKey={(entry) => entry.id}
+            ariaLabel="Cryptographic SHA-256 audit ledger"
+          />
+        </div>
       </section>
-    </div>
+    </VStack>
   );
 }

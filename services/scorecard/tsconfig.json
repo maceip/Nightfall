@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@nightfall/core-contracts": [
+        "../../packages/core-contracts/src/index.ts"
+      ],
+      "@nightfall/policy-gate": [
+        "../../packages/policy-gate/src/index.ts"
+      ],
+      "@nightfall/audit-ledger": [
+        "../../packages/audit-ledger/src/index.ts"
+      ]
+    },
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*"
+  ]
+}

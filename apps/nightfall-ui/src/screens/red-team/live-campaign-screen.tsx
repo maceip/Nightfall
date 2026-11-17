@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { HStack } from '@astryxdesign/core/HStack';
+import { StatusDot } from '@astryxdesign/core/StatusDot';
 import type {
   EndpointHitRecord,
   FindingRecord,
@@ -6,55 +8,77 @@ import type {
   RedTeamCampaignRun,
 } from '@nightfall/core-contracts';
 import {
-  BudgetSignalBars,
-  Button,
-  CampaignActivityTimeline,
-  Card,
-  DataTable,
-  type DataTableColumn,
-  RedTeamCampaignBadge,
-  SectionHeader,
-  SeverityBadge,
-  ShieldCheckIcon,
-  Tabs,
-  TabsList,
-  TabsPanel,
-  TabsTab,
-  cn,
+  BudgetSignalBars, Button, CampaignActivityTimeline, DataTable, type DataTableColumn,
+  FileCodeIcon, RedTeamCampaignBadge, SeverityBadge, ShieldCheckIcon, Tabs, TabsList,
+  TabsPanel, TabsTab,
 } from '@nightfall/ui-kit';
-import { CampaignDetailPanels } from './campaign-detail-panels.js';
+import { CampaignDetailPanels, HttpMethodPill } from './campaign-detail-panels.js';
 
 export type CampaignTab =
   | 'overview'
+  | 'findings'
+  | 'endpoints'
   | 'activity'
   | 'work_queue'
-  | 'shared_knowledge'
-  | 'scope_coverage'
-  | 'findings';
+  | 'shared_knowledge';
 
 export type LiveCampaignScreenProps = {
   campaign: RedTeamCampaignRun;
+  campaigns?: RedTeamCampaignRun[];
   campaignFindings: FindingRecord[];
   approvals: HitlApprovalRequest[];
   killSwitchEngaged: boolean;
+  onSelectCampaign?: (campaignId: string) => void;
   onSelectFindingReport: (finding: FindingRecord) => void;
   onResolveApproval: (approvalId: string, decision: 'approved' | 'rejected') => Promise<void>;
   onOpenYamlBuilder: () => void;
+  onToggleKillSwitch?: () => void;
 };
 
-function formatElapsed(seconds: number): string {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  if (hrs > 0) return `${hrs}h ${mins}m ${String(secs).padStart(2, '0')}s`;
-  return `${mins}m ${String(secs).padStart(2, '0')}s`;
+export function deriveCampaignStatus(
+  campaign: RedTeamCampaignRun,
+  killSwitchEngaged: boolean,
+): { label: string; dotVariant: 'success' | 'warning' | 'error' | 'neutral'; isPulsing: boolean } {
+  if (killSwitchEngaged || campaign.status === 'halted') {
+    return { label: 'Halted', dotVariant: 'error', isPulsing: false };
+  }
+  if (campaign.status === 'paused_hitl') {
+    return { label: 'Awaiting approval', dotVariant: 'warning', isPulsing: false };
+  }
+  if (campaign.status === 'running') {
+    return { label: 'In progress', dotVariant: 'success', isPulsing: true };
+  }
+  if (campaign.status === 'completed') {
+    return { label: 'Completed', dotVariant: 'neutral', isPulsing: false };
+  }
+  return { label: 'Draft', dotVariant: 'neutral', isPulsing: false };
+}
+
+function formatElapsed(rawSeconds: number): string {
+  const safe = Number.isFinite(rawSeconds) && rawSeconds > 0 ? Math.floor(rawSeconds) : 0;
+  const hrs = Math.floor(safe / 3600);
+  const mins = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+  return hrs > 0
+    ? `${hrs}h ${mins}m ${String(secs).padStart(2, '0')}s`
+    : `${mins}m ${String(secs).padStart(2, '0')}s`;
+}
+
+function formatStartedLabel(isoString: string): string {
+  const ms = Date.parse(isoString);
+  if (!Number.isFinite(ms)) return isoString;
+  return new Date(ms).toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
 }
 
 export function LiveCampaignScreen({
   campaign,
+  campaigns = [],
   campaignFindings,
   approvals,
   killSwitchEngaged,
+  onSelectCampaign,
   onSelectFindingReport,
   onResolveApproval,
   onOpenYamlBuilder,
@@ -62,88 +86,130 @@ export function LiveCampaignScreen({
   const [activeTab, setActiveTab] = useState<CampaignTab>('overview');
   const [sevFilter, setSevFilter] = useState<string>('all');
 
-  const visibleFindings = campaignFindings.filter(
-    (f) => sevFilter === 'all' || f.severity === sevFilter,
+  const statusInfo = useMemo(
+    () => deriveCampaignStatus(campaign, killSwitchEngaged),
+    [campaign, killSwitchEngaged],
   );
-  const pendingApprovals = approvals.filter(
-    (a) => a.campaignId === campaign.id && a.status === 'pending',
+  const visibleFindings = useMemo(
+    () => campaignFindings.filter((f) => sevFilter === 'all' || f.severity === sevFilter),
+    [campaignFindings, sevFilter],
+  );
+  const pendingApprovals = useMemo(
+    () => approvals.filter((a) => a.campaignId === campaign.id && a.status === 'pending'),
+    [approvals, campaign.id],
+  );
+  const totalRequests = useMemo(
+    () => campaign.activitySeries.reduce((acc, pt) => acc + (Number.isFinite(pt.requestsCount) ? pt.requestsCount : 0), 0),
+    [campaign.activitySeries],
   );
 
-  const endpointColumns: DataTableColumn<EndpointHitRecord>[] = [
-    { key: 'method', header: 'Method', className: 'w-20', cell: (ep) => <span className="font-mono text-xs font-medium text-primary-700">{ep.method}</span> },
-    { key: 'path', header: 'Endpoint Path', cell: (ep) => <span className="font-mono text-xs break-all text-ink">{ep.path}</span> },
-    { key: 'auth', header: 'Auth Scope', className: 'w-36', cell: (ep) => <span className="text-xs text-primary-600">{ep.authScope}</span> },
-    { key: 'hits', header: 'Hits', className: 'w-24 text-right', cell: (ep) => <span className="text-primary-700">{ep.hits} hits</span> },
+  const overviewFindingColumns: DataTableColumn<FindingRecord>[] = [
+    { key: 'sev', header: 'Severity', className: 'w-24 pl-5', cell: (f) => <SeverityBadge severity={f.severity} /> },
+    { key: 'title', header: 'Finding', className: 'pr-5', cell: (f) => <span className="font-medium text-ink">{f.title}</span> },
   ];
 
+  const overviewEndpointColumns: DataTableColumn<EndpointHitRecord>[] = [
+    { key: 'method', header: 'Method', className: 'w-16 pl-5', cell: (ep) => <HttpMethodPill method={ep.method} /> },
+    { key: 'path', header: 'Path', cell: (ep) => <span className="font-mono text-[12.5px] break-all text-ink">{ep.path}</span> },
+    {
+      key: 'hits',
+      header: 'Hits',
+      className: 'w-24 pr-5 text-right',
+      cell: (ep) => <span className="text-[12.5px] text-ink-secondary">{Number.isFinite(ep.hits) ? ep.hits : 0} hits</span>,
+    },
+  ];
+
+  const firstTick = campaign.activitySeries[0]?.timestamp ?? 'Window start';
+  const lastTick = campaign.activitySeries[campaign.activitySeries.length - 1]?.timestamp ?? 'Latest tick';
+  const findingsRange = visibleFindings.length === 0 ? '0 findings' : `1–${visibleFindings.length} of ${visibleFindings.length}`;
+  const endpointsRange = campaign.endpoints.length === 0 ? '0 endpoints' : `1–${campaign.endpoints.length} of ${campaign.endpoints.length}`;
+
   return (
-    <div id="view-redteam-live-workspace" className="flex min-h-0 flex-1 flex-col overflow-hidden tabular-nums">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-primary-200 bg-surface px-6 py-3.5">
-        <div className="flex items-center gap-3">
-          <RedTeamCampaignBadge size={30} />
+    <div id="view-redteam-live-workspace" className="flex min-h-0 flex-1 flex-col overflow-hidden bg-canvas tabular-nums">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 bg-canvas px-6 pt-4 pb-2.5">
+        <HStack gap={3} align="center">
+          <RedTeamCampaignBadge size={26} />
           <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[15px] font-semibold text-ink">{campaign.name}</span>
-              <Button id="btn-view-campaign-yaml" variant="outline" size="sm" onClick={onOpenYamlBuilder}>
-                campaign.yaml
-              </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[15.5px] font-semibold tracking-[-0.01em] text-ink">{campaign.name}</span>
+              {campaigns.length > 1 && onSelectCampaign ? (
+                <select
+                  id="select-active-campaign"
+                  aria-label="Switch active Red Team campaign"
+                  value={campaign.id}
+                  onChange={(e) => onSelectCampaign(e.target.value)}
+                  className="h-6 rounded-full border border-hairline-strong bg-sidebar px-2.5 text-[11.5px] font-medium text-ink outline-none cursor-pointer"
+                >
+                  {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              ) : null}
+              <button
+                id="btn-view-campaign-yaml"
+                type="button"
+                title="Inspect campaign.yaml v5 manifest"
+                onClick={onOpenYamlBuilder}
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-hairline-strong bg-canvas px-2.5 font-mono text-[11.5px] font-medium text-ink-secondary transition-colors hover:bg-sidebar hover:text-ink cursor-pointer"
+              >
+                <FileCodeIcon size={12} />
+                <span>campaign.yaml</span>
+              </button>
             </div>
-            <div className="mt-0.5 text-xs text-primary-600">
-              {campaign.targetUrl} · {campaign.objective}
+            <div className="mt-0.5 text-[12px] text-ink-muted">
+              {formatStartedLabel(campaign.startedAt)} · {campaign.targetUrl}
             </div>
           </div>
-        </div>
+        </HStack>
 
-        <div className="flex items-center gap-4">
+        <HStack gap={4} align="center">
           <BudgetSignalBars pct={campaign.budgetRemainingPct} />
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs">
-            <span className={cn('size-2 rounded-full', killSwitchEngaged ? 'bg-rose-600' : 'bg-emerald-600')} />
-            <span className="font-semibold text-ink">{killSwitchEngaged ? 'Halted' : 'In progress'}</span>
-            <span className="font-mono text-primary-600">{formatElapsed(campaign.elapsedSeconds)}</span>
+          <span className="inline-flex items-center gap-2 rounded-full bg-pill px-3 py-1 text-[12.5px]">
+            <StatusDot variant={statusInfo.dotVariant} isPulsing={statusInfo.isPulsing} label={statusInfo.label} />
+            <span className="font-semibold text-ink">{statusInfo.label}</span>
+            <span className="font-mono text-[12px] text-ink-secondary">{formatElapsed(campaign.elapsedSeconds)}</span>
           </span>
-        </div>
+        </HStack>
       </header>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(val) => setActiveTab(val as CampaignTab)}
-        className="min-h-0 flex-1 overflow-hidden"
-      >
-        <TabsList aria-label="Red Team campaign tabs">
+      <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as CampaignTab)} className="min-h-0 flex-1 overflow-hidden bg-canvas">
+        <TabsList aria-label="Red Team campaign tabs" className="border-b border-hairline bg-canvas px-6">
           <TabsTab id="rt-tab-overview" value="overview">Overview</TabsTab>
+          <TabsTab id="rt-tab-findings" value="findings">
+            <span>Findings</span>
+            <span className="rounded-full bg-pill px-1.5 py-0.5 text-[11px] font-semibold text-ink-secondary">{campaignFindings.length}</span>
+          </TabsTab>
+          <TabsTab id="rt-tab-endpoints" value="endpoints">Endpoints</TabsTab>
           <TabsTab id="rt-tab-activity" value="activity">Activity</TabsTab>
           <TabsTab id="rt-tab-work_queue" value="work_queue">
-            Work queue{pendingApprovals.length ? ` (${pendingApprovals.length} gate)` : ''}
+            Work queue{pendingApprovals.length > 0 ? ` (${pendingApprovals.length})` : ''}
           </TabsTab>
           <TabsTab id="rt-tab-shared_knowledge" value="shared_knowledge">Shared knowledge</TabsTab>
-          <TabsTab id="rt-tab-scope_coverage" value="scope_coverage">Scope &amp; coverage</TabsTab>
-          <TabsTab id="rt-tab-findings" value="findings">Findings {campaignFindings.length}</TabsTab>
         </TabsList>
 
-        <TabsPanel value="overview" className="space-y-6 overflow-y-auto p-6">
-          <Card className="grid grid-cols-1 gap-6 p-5 lg:grid-cols-[1fr_420px]">
+        <TabsPanel value="overview" className="flex flex-col overflow-y-auto bg-canvas p-0">
+          <div className="grid grid-cols-1 gap-6 border-b border-hairline bg-canvas px-6 py-5 lg:grid-cols-[1fr_460px]">
             <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 text-[14.5px] font-semibold text-ink">
-                <span className="size-2 rounded-full bg-emerald-600" />
-                <span>{campaign.headlineStatus}</span>
+              <div className="inline-flex items-center gap-2 text-[15px] font-semibold text-ink">
+                <StatusDot variant={statusInfo.dotVariant} isPulsing={statusInfo.isPulsing} label={statusInfo.label} />
+                <span>{campaign.headlineStatus || 'Confirmed cross-tenant finding'}</span>
               </div>
-              <p className="m-0 text-[13.5px] text-primary-700">{campaign.headlineDetail}</p>
-              <div className="text-xs text-primary-500">{campaign.updatedLabel}</div>
+              <p className="m-0 text-[13.5px] text-ink-secondary">{campaign.headlineDetail}</p>
+              <div className="text-[12px] text-ink-muted">{campaign.updatedLabel} · {totalRequests} scoped requests sent</div>
             </div>
-            <CampaignActivityTimeline series={campaign.activitySeries} />
-          </Card>
+            <CampaignActivityTimeline series={campaign.activitySeries} startLabel={firstTick} endLabel={lastTick} />
+          </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div>
-              <SectionHeader
-                title="Investigation findings"
-                actions={
-                  <>
+          <div className="grid flex-1 grid-cols-1 divide-y divide-hairline border-b border-hairline bg-canvas lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+            <div className="flex flex-col justify-between bg-canvas">
+              <div>
+                <div className="flex items-center justify-between gap-2 border-b border-hairline px-5 py-3">
+                  <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em] text-ink">Investigation findings</h2>
+                  <div className="flex items-center gap-3">
                     <select
                       id="select-rt-findings-sev"
+                      aria-label="Filter investigation findings by severity"
                       value={sevFilter}
                       onChange={(e) => setSevFilter(e.target.value)}
-                      className="h-7 rounded-md border border-primary-200 bg-primary-50 px-2 text-xs font-medium text-ink"
+                      className="h-7 rounded-full border border-hairline-strong bg-canvas px-2.5 text-[12px] font-medium text-ink outline-none cursor-pointer"
                     >
                       <option value="all">All severities</option>
                       <option value="critical">Critical</option>
@@ -151,39 +217,49 @@ export function LiveCampaignScreen({
                       <option value="medium">Medium</option>
                       <option value="low">Low</option>
                     </select>
-                    <Button variant="ghost" size="sm" onClick={() => setActiveTab('findings')}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('findings')}
+                      className="text-[12.5px] font-medium text-ink-secondary transition-colors hover:text-ink cursor-pointer"
+                    >
                       View all findings →
-                    </Button>
-                  </>
-                }
-              />
-              <DataTable
-                columns={[
-                  { key: 'sev', header: 'Severity', className: 'w-24', cell: (f) => <SeverityBadge severity={f.severity} /> },
-                  { key: 'title', header: 'Finding', cell: (f) => <span className="font-medium text-ink">{f.title}</span> },
-                ]}
-                rows={visibleFindings}
-                rowKey={(f) => f.id}
-                rowId={(f) => `rt-finding-row-${f.id}`}
-                onRowClick={onSelectFindingReport}
-                emptyMessage="No findings confirmed yet."
-              />
+                    </button>
+                  </div>
+                </div>
+                <DataTable
+                  hideHeader
+                  columns={overviewFindingColumns}
+                  rows={visibleFindings}
+                  rowKey={(f) => f.id}
+                  rowId={(f) => `rt-finding-row-${f.id}`}
+                  onRowClick={onSelectFindingReport}
+                  emptyMessage="No findings yet."
+                  footer={<><span>{findingsRange}</span><span>Page 1</span></>}
+                />
+              </div>
             </div>
 
-            <div>
-              <SectionHeader
-                title="Endpoints"
-                actions={
-                  <Button variant="ghost" size="sm" onClick={() => setActiveTab('scope_coverage')}>
+            <div className="flex flex-col justify-between bg-canvas">
+              <div>
+                <div className="flex items-center justify-between gap-2 border-b border-hairline px-5 py-3">
+                  <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em] text-ink">Endpoints</h2>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('endpoints')}
+                    className="text-[12.5px] font-medium text-ink-secondary transition-colors hover:text-ink cursor-pointer"
+                  >
                     View all endpoints →
-                  </Button>
-                }
-              />
-              <DataTable
-                columns={endpointColumns.filter((c) => c.key !== 'auth')}
-                rows={campaign.endpoints}
-                rowKey={(ep, i) => `${ep.method}-${ep.path}-${i}`}
-              />
+                  </button>
+                </div>
+                <DataTable
+                  hideHeader
+                  columns={overviewEndpointColumns}
+                  rows={campaign.endpoints}
+                  rowKey={(ep, i) => `${ep.method}-${ep.path}-${i}`}
+                  emptyMessage="No endpoints probed yet."
+                  footer={<><span>{endpointsRange}</span><span>Page 1 of 1</span></>}
+                />
+              </div>
             </div>
           </div>
         </TabsPanel>
@@ -192,7 +268,6 @@ export function LiveCampaignScreen({
           campaign={campaign}
           campaignFindings={campaignFindings}
           pendingApprovals={pendingApprovals}
-          endpointColumns={endpointColumns}
           onSelectFindingReport={onSelectFindingReport}
           onResolveApproval={onResolveApproval}
         />
@@ -200,14 +275,30 @@ export function LiveCampaignScreen({
 
       <footer
         id="redteam-safety-monitor"
-        className="flex shrink-0 items-center justify-between gap-3 border-t border-primary-200 bg-primary-50 px-6 py-2.5 text-xs text-primary-700"
+        className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-hairline bg-sidebar px-6 py-3 text-[12.5px] text-ink-secondary"
       >
-        <div className="flex items-center gap-2">
-          <ShieldCheckIcon size={16} className="text-emerald-700" />
+        <div className="flex flex-wrap items-center gap-2">
+          <ShieldCheckIcon size={16} className="text-ink-secondary" />
           <span className="font-semibold text-ink">Safety monitor</span>
           <span>{campaign.safetyMonitorText}</span>
+          <span className="text-ink-muted">
+            · Within approved v5 scope · Microsoft LiteBox isolated · {pendingApprovals.length} HITL gates
+          </span>
         </div>
-        <span className="text-primary-500">{campaign.updatedLabel}</span>
+
+        <div className="flex items-center gap-2">
+          {pendingApprovals[0] ? (
+            <>
+              <Button id={`btn-footer-approve-${pendingApprovals[0].id}`} size="sm" className="h-6 px-2.5 text-[11.5px]" onClick={() => void onResolveApproval(pendingApprovals[0]!.id, 'approved')}>
+                Approve HITL
+              </Button>
+              <Button id={`btn-footer-reject-${pendingApprovals[0].id}`} variant="outline" size="sm" className="h-6 px-2.5 text-[11.5px]" onClick={() => void onResolveApproval(pendingApprovals[0]!.id, 'rejected')}>
+                Reject
+              </Button>
+            </>
+          ) : null}
+          <span className="text-ink-muted">{campaign.updatedLabel}</span>
+        </div>
       </footer>
     </div>
   );

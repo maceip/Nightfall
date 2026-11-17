@@ -11,6 +11,10 @@ import type {
   RepositoryRecord,
   SandboxToolchainStatus,
   ScanJobRecord,
+  ScorecardCheckCatalogEntry,
+  ScorecardReportRecord,
+  ScorecardScanRequest,
+  ScorecardToolchainStatus,
   StreamEvent,
 } from '@nightfall/core-contracts';
 
@@ -28,6 +32,7 @@ export type NightfallBootstrapPayload = {
   fixes: FixProposal[];
   repositories: RepositoryRecord[];
   scans: ScanJobRecord[];
+  scorecardReports: ScorecardReportRecord[];
   campaigns: RedTeamCampaignRun[];
   evidenceBundles: EvidenceBundle[];
   approvals: HitlApprovalRequest[];
@@ -35,6 +40,7 @@ export type NightfallBootstrapPayload = {
   auditEntries: AuditEntry[];
   killSwitchEngaged: boolean;
   sandboxToolchain?: SandboxToolchainStatus;
+  scorecardToolchain?: ScorecardToolchainStatus;
   safetyMonitor?: SafetyMonitorSummary;
 };
 
@@ -93,22 +99,35 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function fetchBootstrapState(): Promise<NightfallBootstrapPayload> {
-  const payload = await requestJson<Omit<NightfallBootstrapPayload, 'connectedLiveApi'>>(
-    '/bootstrap',
-  );
+  const payload = await requestJson<
+    Omit<NightfallBootstrapPayload, 'connectedLiveApi' | 'scorecardReports'> & {
+      scorecardReports?: ScorecardReportRecord[];
+    }
+  >('/bootstrap');
   return {
     ...payload,
+    scorecardReports: payload.scorecardReports ?? [],
     connectedLiveApi: true,
   };
 }
 
-export function subscribeLiveEvents(onEvent: (ev: StreamEvent) => void): () => void {
+export function subscribeLiveEvents(
+  onEvent: (ev: StreamEvent) => void,
+  onConnectionChange?: (connected: boolean) => void,
+): () => void {
   if (typeof EventSource === 'undefined') {
     return () => {};
   }
   try {
     const es = new EventSource(`${activeApiBaseUrl}/events`);
+    es.onopen = () => {
+      onConnectionChange?.(true);
+    };
+    es.onerror = () => {
+      onConnectionChange?.(false);
+    };
     es.onmessage = (msg) => {
+      onConnectionChange?.(true);
       try {
         const parsed = JSON.parse(msg.data) as StreamEvent;
         onEvent(parsed);
@@ -129,11 +148,31 @@ export async function triggerNewScanApi(req: NewScanRequest): Promise<{
   overview?: OverviewSummary;
   findings?: FindingRecord[];
   repositories?: RepositoryRecord[];
+  scorecardReport?: ScorecardReportRecord;
 }> {
   return requestJson('/scans', {
     method: 'POST',
     body: JSON.stringify(req),
   });
+}
+
+export async function runScorecardScanApi(req: ScorecardScanRequest): Promise<{
+  report: ScorecardReportRecord;
+  promotedFindings: FindingRecord[];
+  overview?: OverviewSummary;
+  repositories?: RepositoryRecord[];
+}> {
+  return requestJson('/scorecard/scan', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+export async function fetchScorecardChecksApi(): Promise<{
+  checks: ScorecardCheckCatalogEntry[];
+  toolchain: ScorecardToolchainStatus;
+}> {
+  return requestJson('/scorecard/checks');
 }
 
 export async function markFindingDuplicateApi(
@@ -174,6 +213,8 @@ export async function mergeAndVerifyFixApi(fixId: string): Promise<{
   fix: FixProposal;
   finding?: FindingRecord;
   overview?: OverviewSummary;
+  scorecardReport?: ScorecardReportRecord;
+  repositories?: RepositoryRecord[];
 }> {
   return requestJson(`/fixes/${encodeURIComponent(fixId)}/merge-and-verify`, {
     method: 'POST',
@@ -237,3 +278,4 @@ export async function toggleKillSwitchApi(
     body: JSON.stringify({ engaged, reason }),
   });
 }
+

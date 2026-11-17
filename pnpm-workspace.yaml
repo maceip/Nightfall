@@ -5,6 +5,9 @@ packages:
   - "benchmarks/*"
 
 allowBuilds:
+  "@astryxdesign/core": false
+  "@astryxdesign/cli": false
   esbuild: true
   electron: true
   electron-winstaller: true
+

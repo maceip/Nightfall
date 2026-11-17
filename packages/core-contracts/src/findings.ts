@@ -31,7 +31,13 @@ export const RiskTierSchema = z.enum([
 ]);
 export type RiskTier = z.infer<typeof RiskTierSchema>;
 
-export const FindingSourceBadgeSchema = z.enum(['nightfall', 'red-team', 'sast', 'third-party']);
+export const FindingSourceBadgeSchema = z.enum([
+  'nightfall',
+  'red-team',
+  'sast',
+  'scorecard',
+  'third-party',
+]);
 export type FindingSourceBadge = z.infer<typeof FindingSourceBadgeSchema>;
 
 export const OwnerSchema = z.object({
@@ -151,6 +157,7 @@ export const FixProposalSchema = z.object({
     'Nightfall · Cloud snapshot',
     'Nightfall · Local snapshot',
     'Nightfall · Red Team handoff',
+    'Nightfall · Scorecard handoff',
   ]),
   findingIds: z.array(z.string()).min(1),
   severity: SeveritySchema,
