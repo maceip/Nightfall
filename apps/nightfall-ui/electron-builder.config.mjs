@@ -349,8 +349,6 @@ export default {
     background: 'build/dmg_background.png',
     icon: 'build/icon_installer.icns',
     contents: [
-      { x: 640, y: 56, type: 'file', path: '.background.tiff' },
-      { x: 640, y: 56, type: 'file', path: '.VolumeIcon.icns' },
       { x: 130, y: 220 },
       { x: 410, y: 220, type: 'link', path: '/Applications' },
     ],
