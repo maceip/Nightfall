@@ -43,12 +43,20 @@ echo "[Nightfall] Building vendored Nightfall Scorecard ($GOOS_VAL/$GOARCH_VAL, 
 
 mkdir -p "$BIN_DIR" "$LOCAL_VENDOR_BIN"
 
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  GO_NOPROXY_DEFAULT="${GONOPROXY:-}"
+  GO_SUMDB_DEFAULT="${GOSUMDB:-sum.golang.org}"
+else
+  GO_NOPROXY_DEFAULT="${GONOPROXY:-github.com/*,google.golang.org/*,modernc.org/*}"
+  GO_SUMDB_DEFAULT="${GOSUMDB:-off}"
+fi
+
 CGO_ENABLED=0 \
 GOOS="$GOOS_VAL" \
 GOARCH="$GOARCH_VAL" \
 GOTOOLCHAIN="${GOTOOLCHAIN:-local}" \
-GONOPROXY="${GONOPROXY:-github.com/*,google.golang.org/*,modernc.org/*}" \
-GOSUMDB="${GOSUMDB:-off}" \
+GONOPROXY="$GO_NOPROXY_DEFAULT" \
+GOSUMDB="$GO_SUMDB_DEFAULT" \
 go -C "$SCORECARD_SRC" build -trimpath -ldflags "$LDFLAGS" -o "$BIN_DIR/nightfall-scorecard${EXT}" .
 
 cp -f "$BIN_DIR/nightfall-scorecard${EXT}" "$BIN_DIR/scorecard${EXT}"

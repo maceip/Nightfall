@@ -1,10 +1,10 @@
 # Nightfall Scorecard Engine
-bin/
-nightfall-scorecard
-scorecard
-scorecard.docker
-scorecard.releaser
-gitblobcache
+/bin/
+/nightfall-scorecard
+/scorecard
+/scorecard.docker
+/scorecard.releaser
+/gitblobcache
 *.exe
 *.exe~
 *.dll
