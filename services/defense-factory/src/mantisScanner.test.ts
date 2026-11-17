@@ -108,9 +108,11 @@ describe('MantisScanner', () => {
         sandbox: 'gvisor' as unknown as 'static-only',
       }),
     ).rejects.toThrow(/only run static sandbox modes/);
-    await expect(
-      scanner.scanRepository({ repository: 'asset-servicing', localPath: tmp, extraArgs: ['--sandbox', 'remote'] }),
-    ).rejects.toThrow(/not extraArgs/);
+    for (const extraArgs of [['--sandbox', 'remote'], ['--sand=remote'], ['--sa', 'gce'], ['-sremote'], ['-s', 'gvisor']]) {
+      await expect(
+        scanner.scanRepository({ repository: 'asset-servicing', localPath: tmp, extraArgs }),
+      ).rejects.toThrow(/not extraArgs/);
+    }
   });
 
   it('reports an unknown run id as an error, not as a clean run', async () => {

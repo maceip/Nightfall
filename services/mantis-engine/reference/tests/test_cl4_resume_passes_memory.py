@@ -236,7 +236,7 @@ class TestMultiSliceResumeAccounting(unittest.TestCase):
         async def _run() -> None:
             svc = mantis_main._PatientSqliteSessionService(db_path=self.sess_db)
             run_id = "run-multislice"
-            target_hash = hashlib.sha256(self.repo.encode("utf-8")).hexdigest()[:8]
+            target_hash = hashlib.sha256(self.repo.encode("utf-8")).hexdigest()[:32]
             session_id = f"session_run_{run_id}_{target_hash}"
             sess = await svc.create_session(
                 app_name=mantis_main.APP_NAME,

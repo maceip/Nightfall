@@ -169,13 +169,47 @@ def to_finding_record(row: dict[str, Any], *, repository: str, revision: str) ->
     return record
 
 
-def latest_run_id(db_path: str) -> Optional[str]:
-    """The most recently started run, including one that found nothing."""
+def _root(path: str) -> str:
+    return os.path.realpath(path).rstrip("/")
+
+
+def run_target_root(db_path: str, run_id: str) -> Optional[str]:
+    """The target directory a run recorded, or None for a run that recorded none."""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            row = conn.execute("SELECT metadata_json FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    try:
+        meta = json.loads(row[0] or "{}") if row else {}
+    except (TypeError, ValueError):
+        return None
+    root = meta.get("target_root") or meta.get("target") if isinstance(meta, dict) else None
+    return _root(str(root)) if root else None
+
+
+def latest_run_id(db_path: str, target: Optional[str] = None) -> Optional[str]:
+    """The most recently started run, including one that found nothing.
+
+    With ``target``, only runs over that directory count, so one database
+    shared by several repositories never hands one repository another's run.
+    """
+    want = _root(target) if target else None
     with sqlite3.connect(db_path) as conn:
         try:
-            row = conn.execute("SELECT run_id FROM runs ORDER BY started DESC, rowid DESC LIMIT 1").fetchone()
-            if row:
-                return row[0]
+            rows = conn.execute("SELECT run_id, metadata_json FROM runs ORDER BY started DESC, rowid DESC").fetchall()
+            for rid, meta_json in rows:
+                if want is None:
+                    return rid
+                try:
+                    meta = json.loads(meta_json or "{}")
+                except (TypeError, ValueError):
+                    meta = {}
+                root = (meta.get("target_root") or meta.get("target")) if isinstance(meta, dict) else None
+                if root and _root(str(root)) == want:
+                    return rid
+            if want is not None:
+                return None
         except sqlite3.OperationalError:
             pass  # a database from before the runs table
         row = conn.execute(
@@ -189,6 +223,10 @@ class UnknownRunError(LookupError):
 
 
 class NoRunError(LookupError):
+    pass
+
+
+class RunTargetMismatchError(LookupError):
     pass
 
 
@@ -207,14 +245,21 @@ def run_ids(db_path: str) -> set[str]:
         return set()
 
 
-def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional[str] = None) -> dict[str, Any]:
+def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional[str] = None,
+               target: Optional[str] = None) -> dict[str, Any]:
+    """One run's findings. With ``target``, the run must be a run over that directory."""
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"Mantis database not found: {db_path}")
     if run_id and run_id not in run_ids(db_path):
         raise UnknownRunError(f"Mantis run not found in {db_path}: {run_id}")
-    rid = run_id or latest_run_id(db_path)
+    rid = run_id or latest_run_id(db_path, target)
     if not rid:
-        raise NoRunError(f"No Mantis run is recorded in {db_path}")
+        scope = f" for {target}" if target else ""
+        raise NoRunError(f"No Mantis run is recorded in {db_path}{scope}")
+    if target:
+        recorded = run_target_root(db_path, rid)
+        if recorded is not None and recorded != _root(target):
+            raise RunTargetMismatchError(f"Mantis run {rid} scanned {recorded}, not {_root(target)}")
     findings: list[dict[str, Any]] = []
     if rid:
         with sqlite3.connect(db_path) as conn:
@@ -233,8 +278,9 @@ def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional
 
 def _cmd_export(args: argparse.Namespace) -> int:
     try:
-        doc = export_run(args.db, repository=args.repository, revision=args.revision, run_id=args.run_id)
-    except (FileNotFoundError, UnknownRunError, NoRunError) as err:
+        doc = export_run(args.db, repository=args.repository, revision=args.revision, run_id=args.run_id,
+                         target=args.target)
+    except (FileNotFoundError, UnknownRunError, NoRunError, RunTargetMismatchError) as err:
         print(str(err), file=sys.stderr)
         return 1
     json.dump(doc, sys.stdout)
@@ -245,6 +291,10 @@ def _cmd_export(args: argparse.Namespace) -> int:
 def _cmd_scan(args: argparse.Namespace) -> int:
     db_path = os.path.abspath(args.db)
     before = run_ids(db_path)
+    resumed = _resume_target(args.mantis_args)
+    if resumed == "":
+        resumed = latest_run_id(db_path, args.target) if os.path.exists(db_path) else None
+    resumed_before = _run_fingerprint(db_path, resumed)
     argv = [sys.executable, os.path.join(_HERE, "main.py"), os.path.abspath(args.target),
             "--db", db_path, "--yes", *args.mantis_args]
     # Mantis's own progress goes to stderr so stdout carries only the export.
@@ -266,12 +316,20 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, _stop)
     proc.wait()
-    run_id = _scanned_run_id(db_path, before, args.mantis_args)
+    run_id = _scanned_run_id(db_path, before, args.mantis_args, args.target)
+    reused = run_id is not None and run_id in before
+    untouched = run_id != resumed or resumed_before == _run_fingerprint(db_path, run_id)
+    if reused and proc.returncode != 0 and untouched:
+        # A resume Mantis refused before doing anything (a target or scan-mode
+        # mismatch) left the old run as it was: its findings are not this scan's.
+        print(f"Mantis exited {proc.returncode} without updating run {run_id}", file=sys.stderr)
+        return proc.returncode
     if run_id is None:
         # Mantis recorded no run: a failure to start, never a clean result.
         print(f"Mantis recorded no run (exit code {proc.returncode})", file=sys.stderr)
         return proc.returncode or 1
-    doc = export_run(db_path, repository=args.repository, revision=args.revision, run_id=run_id)
+    doc = export_run(db_path, repository=args.repository, revision=args.revision, run_id=run_id,
+                     target=args.target)
     doc["mantisExitCode"] = proc.returncode
     json.dump(doc, sys.stdout)
     sys.stdout.write("\n")
@@ -280,6 +338,30 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     # caller gets the findings with mantisExitCode and decides how to treat
     # incomplete coverage.
     return 0
+
+
+def _run_fingerprint(db_path: str, run_id: Optional[str]) -> Optional[tuple[Any, ...]]:
+    """What a run has recorded so far, to tell whether an invocation changed it."""
+    if not run_id or not os.path.exists(db_path):
+        return None
+    try:
+        with sqlite3.connect(db_path) as conn:
+            parts: list[Any] = list(conn.execute(
+                "SELECT COUNT(*), MAX(id), MAX(timestamp), GROUP_CONCAT(status) FROM findings WHERE run_id = ?",
+                (run_id,)).fetchone())
+            for table in ("runs", "campaign_spend"):
+                try:
+                    parts.append(conn.execute(f"SELECT COUNT(*), MAX(rowid) FROM {table} WHERE run_id = ?",
+                                              (run_id,)).fetchone())
+                except sqlite3.OperationalError:
+                    parts.append(None)
+            try:
+                parts.append(conn.execute("SELECT metadata_json FROM runs WHERE run_id = ?", (run_id,)).fetchone())
+            except sqlite3.OperationalError:
+                parts.append(None)
+            return tuple(parts)
+    except sqlite3.DatabaseError:
+        return None
 
 
 def _resume_target(mantis_args: list[str]) -> Optional[str]:
@@ -293,18 +375,19 @@ def _resume_target(mantis_args: list[str]) -> Optional[str]:
     return None
 
 
-def _scanned_run_id(db_path: str, before: set[str], mantis_args: list[str]) -> Optional[str]:
+def _scanned_run_id(db_path: str, before: set[str], mantis_args: list[str],
+                    target: Optional[str] = None) -> Optional[str]:
     """The run this scan wrote: a new run, or the run it resumed."""
     new_runs = run_ids(db_path) - before
     if len(new_runs) == 1:
         return next(iter(new_runs))
     if new_runs:
-        return latest_run_id(db_path)
+        return latest_run_id(db_path, target) or latest_run_id(db_path)
     resumed = _resume_target(mantis_args)
     if resumed:
         return resumed if resumed in run_ids(db_path) else None
     if resumed == "":
-        return latest_run_id(db_path)
+        return latest_run_id(db_path, target)
     return None
 
 
@@ -318,6 +401,8 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--revision", required=True, help="Revision the findings were observed at")
         if name == "export":
             p.add_argument("--run-id", default=None, help="Run to export (default: the latest)")
+            p.add_argument("--target", default=None,
+                           help="Directory the run must have scanned (scopes 'latest' to it)")
             p.set_defaults(func=_cmd_export)
         else:
             p.add_argument("--target", required=True, help="Directory to scan")

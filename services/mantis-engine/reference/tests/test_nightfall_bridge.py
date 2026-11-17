@@ -142,6 +142,21 @@ class NightfallBridgeTest(unittest.TestCase):
         with self.assertRaises(nightfall_bridge.NoRunError):
             nightfall_bridge.export_run(empty, repository="acme/api", revision="r")
 
+    def test_runs_are_scoped_to_the_requested_target(self):
+        repo_a = os.path.join(self.tmp, "repo-a"); repo_b = os.path.join(self.tmp, "repo-b")
+        os.makedirs(repo_a); os.makedirs(repo_b)
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("INSERT INTO runs (run_id, started, metadata_json) VALUES ('run-a', '2999-01-01', ?)",
+                         (json.dumps({"target_root": repo_a}),))
+            conn.execute("INSERT INTO runs (run_id, started, metadata_json) VALUES ('run-b', '2999-01-02', ?)",
+                         (json.dumps({"target_root": repo_b}),))
+        doc = nightfall_bridge.export_run(self.db, repository="a", revision="r", target=repo_a)
+        self.assertEqual(doc["runId"], "run-a", "repo-b ran later, but it is another repository")
+        with self.assertRaises(nightfall_bridge.RunTargetMismatchError):
+            nightfall_bridge.export_run(self.db, repository="a", revision="r", run_id="run-b", target=repo_a)
+        with self.assertRaises(nightfall_bridge.NoRunError):
+            nightfall_bridge.export_run(self.db, repository="c", revision="r", target=self.tmp)
+
     def test_resume_target_parsing(self):
         self.assertEqual(nightfall_bridge._resume_target(["--resume", "run-9"]), "run-9")
         self.assertEqual(nightfall_bridge._resume_target(["--resume=run-9"]), "run-9")
@@ -197,6 +212,17 @@ class NightfallBridgeScanTest(unittest.TestCase):
         doc = json.loads(out)
         self.assertEqual(doc["runId"], "run-r")
         self.assertEqual([f["title"] for f in doc["findings"]], ["Found on resume"])
+
+    def test_a_resume_mantis_refused_is_a_failure_not_the_old_findings(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("INSERT INTO runs (run_id) VALUES ('run-old')")
+            conn.execute("INSERT INTO findings (run_id, filepath, title, severity, description, line_numbers) "
+                         "VALUES ('run-old', 'c.py', 'Stale', 'HIGH', 'd', '[1]')")
+        self._main("sys.exit(2)\n")  # refuses before touching the run
+        proc = self._scan("--resume", "run-old")
+        out, _ = proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 2)
+        self.assertEqual(out, "")
 
     def test_a_clean_exit_without_a_run_is_a_failure(self):
         self._main("sys.exit(0)\n")

@@ -126,7 +126,7 @@ async def execute_sub_task(
 ) -> bool:
     """Executes the workflow graph for a single target file. Returns True if an error was encountered."""
     sanitized_filepath = str(filepath).replace("\n", "").replace("\r", "").strip()
-    target_hash = hashlib.sha256(sanitized_filepath.encode("utf-8")).hexdigest()[:8]
+    target_hash = hashlib.sha256(sanitized_filepath.encode("utf-8")).hexdigest()[:32]  # 128 bits: no two campaign targets share a session
     session_id = f"session_run_{run_id}_{target_hash}{session_suffix}"
     existing_session = await session_service.get_session(app_name=APP_NAME, user_id=USER_ID, session_id=session_id)
     if existing_session is None:

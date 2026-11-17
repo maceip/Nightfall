@@ -59,6 +59,12 @@ export interface MantisExportInput {
   dbPath: string;
   observedRevision: string;
   runId?: string;
+  /**
+   * The directory the run scanned. A database can hold runs over several
+   * repositories: with this set, "latest" means the latest run over this
+   * directory, and a runId over another directory is refused.
+   */
+  targetPath?: string;
 }
 
 export interface MantisScanResult {
@@ -69,6 +75,13 @@ export interface MantisScanResult {
   /** Nonzero when Mantis paused on a budget or a campaign failed: findings are kept, coverage may be partial. */
   mantisExitCode: number;
   findings: FindingRecord[];
+}
+
+/** --sandbox, -s, or any prefix argparse would expand to --sandbox (--sand, --sandbox=...). */
+function isSandboxFlag(arg: string): boolean {
+  const flag = arg.split('=', 1)[0] ?? arg;
+  if (flag === '-s' || /^-s[^-]/.test(arg)) return true;
+  return flag.length >= 3 && flag.startsWith('--') && '--sandbox'.startsWith(flag);
 }
 
 function repoShortName(repository: string): string {
@@ -113,6 +126,7 @@ export class MantisScanner {
       '--repository', shortRepo,
       '--revision', input.observedRevision,
       ...(input.runId ? ['--run-id', input.runId] : []),
+      ...(input.targetPath ? ['--target', path.resolve(input.targetPath)] : []),
     ];
     const doc = await this.runBridge(args, 60_000);
     return this.toFindingRecords(input.repository, doc);
@@ -140,13 +154,15 @@ export class MantisScanner {
         throw new Error(`Mantis may only run static sandbox modes inside Nightfall, got "${String(sandbox)}"`);
       }
       const extraArgs = input.extraArgs ?? [];
-      if (extraArgs.some((arg) => arg === '--sandbox' || arg === '-s' || arg.startsWith('--sandbox='))) {
+      if (extraArgs.some(isSandboxFlag)) {
         throw new Error('Pass the Mantis sandbox through `sandbox`, not extraArgs');
       }
+      // The sandbox goes last: with argparse the last occurrence wins, so nothing
+      // earlier on the command line can move Mantis off a static mode.
       const mantisArgs = [
-        '--sandbox', sandbox,
         ...(input.model ? ['--model', input.model] : []),
         ...extraArgs,
+        '--sandbox', sandbox,
       ];
       const doc = await this.runBridge(
         [
