@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -168,4 +168,23 @@ describe('Nightfall zcode-aligned Electron desktop & CI packaging suite', () => 
     expect(workflowYaml).toContain('nightfall-debug-windows-${{ matrix.arch }}-msi');
     expect(workflowYaml).toContain('actions/upload-artifact@v4');
   });
+
+  it('preserves node:sqlite protocol and CJS createRequire shim in Electron main bundle', () => {
+    const tsupConfigSource = readFileSync(resolve(__dirname, '../tsup.config.ts'), 'utf8');
+    expect(tsupConfigSource).toContain('removeNodeProtocol: false');
+    expect(tsupConfigSource).toContain('__nfCreateRequire');
+
+    const builtMainDir = resolve(__dirname, '../out/main');
+    if (existsSync(builtMainDir)) {
+      const builtMainCombined = readdirSync(builtMainDir)
+        .filter((name) => name.endsWith('.js'))
+        .map((name) => readFileSync(resolve(builtMainDir, name), 'utf8'))
+        .join('\n');
+      expect(builtMainCombined).toContain('__nfCreateRequire');
+      expect(builtMainCombined).toContain('node:sqlite');
+      expect(builtMainCombined).not.toMatch(/from\s+["']sqlite["']/);
+    }
+  });
 });
+
+

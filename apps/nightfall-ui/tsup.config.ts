@@ -65,12 +65,17 @@ export default defineConfig([
   {
     name: 'main',
     entry: {
-      'main/index': 'electron/main.ts',
+      index: 'electron/main.ts',
     },
-    outDir: 'out',
+    outDir: 'out/main',
+    clean: true,
     format: 'esm',
     platform: 'node',
     target: 'node22',
+    removeNodeProtocol: false,
+    banner: {
+      js: "import { createRequire as __nfCreateRequire } from 'node:module'; const require = __nfCreateRequire(import.meta.url);",
+    },
     external: desktopNodeRuntimeExternals,
     noExternal: [
       '@nightfall/api-gateway',
@@ -88,16 +93,17 @@ export default defineConfig([
     define: createSharedDefines(),
     esbuildOptions(options) {
       applyDesktopTsupEsbuildSecurityOptions(options);
-      options.chunkNames = 'main/chunk-[hash]';
+      options.chunkNames = 'chunk-[hash]';
     },
     ...bundleSecurityOptions,
   },
   {
     name: 'preload',
     entry: {
-      'preload/index': 'electron/preload.ts',
+      index: 'electron/preload.ts',
     },
-    outDir: 'out',
+    outDir: 'out/preload',
+    clean: true,
     format: 'cjs',
     platform: 'node',
     target: 'node22',
