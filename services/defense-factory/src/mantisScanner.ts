@@ -43,10 +43,11 @@ export interface MantisScanInput {
   dbPath?: string;
   observedRevision?: string;
   /**
-   * Mantis's own sandbox. Default 'static-only': Mantis reasons over the code and
-   * Nightfall runs dynamic proofs in its LiteBox sandbox runtime.
+   * Mantis's static modes only. Mantis reasons over the code; dynamic execution and
+   * proofs stay in Nightfall's EgressPolicyProxy / RedTeamEngine and the LiteBox
+   * DisposableSandboxRuntime, never in a Mantis-managed sandbox.
    */
-  sandbox?: 'static-only' | 'static' | 'gvisor' | 'microsandbox' | 'gce' | 'remote';
+  sandbox?: 'static-only' | 'static';
   model?: string;
   /** Further Mantis CLI options, passed through unchanged. */
   extraArgs?: string[];
@@ -65,6 +66,7 @@ export interface MantisScanResult {
   scannedPath: string;
   observedRevision: string;
   runId: string | null;
+  /** Nonzero when Mantis paused on a budget or a campaign failed: findings are kept, coverage may be partial. */
   mantisExitCode: number;
   findings: FindingRecord[];
 }
@@ -133,10 +135,18 @@ export class MantisScanner {
       dbPath = path.join(tempDir, 'mantis.db');
     }
     try {
+      const sandbox = input.sandbox ?? 'static-only';
+      if (sandbox !== 'static-only' && sandbox !== 'static') {
+        throw new Error(`Mantis may only run static sandbox modes inside Nightfall, got "${String(sandbox)}"`);
+      }
+      const extraArgs = input.extraArgs ?? [];
+      if (extraArgs.some((arg) => arg === '--sandbox' || arg === '-s' || arg.startsWith('--sandbox='))) {
+        throw new Error('Pass the Mantis sandbox through `sandbox`, not extraArgs');
+      }
       const mantisArgs = [
-        '--sandbox', input.sandbox ?? 'static-only',
+        '--sandbox', sandbox,
         ...(input.model ? ['--model', input.model] : []),
-        ...(input.extraArgs ?? []),
+        ...extraArgs,
       ];
       const doc = await this.runBridge(
         [

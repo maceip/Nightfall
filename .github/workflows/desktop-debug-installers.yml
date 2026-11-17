@@ -101,6 +101,19 @@ jobs:
             --initial-files "$W/b.tar" --program-from-tar /usr/bin/cat /sandbox/canary.txt
           echo "litebox cat exit=$?"
 
+      - name: Set up Python for the Mantis engine
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: services/mantis-engine/reference/requirements.txt
+
+      - name: Install Mantis engine requirements
+        run: |
+          python -m venv "$RUNNER_TEMP/mantis-venv"
+          "$RUNNER_TEMP/mantis-venv/bin/pip" install --require-hashes -r services/mantis-engine/reference/requirements.txt
+          echo "NIGHTFALL_MANTIS_PYTHON=$RUNNER_TEMP/mantis-venv/bin/python" >> "$GITHUB_ENV"
+
       - name: Typecheck entire monorepo
         run: pnpm typecheck
 

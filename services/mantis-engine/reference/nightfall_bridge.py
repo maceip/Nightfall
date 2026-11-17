@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -60,8 +61,11 @@ def _status(raw: Any) -> str:
 
 
 def _fix_verification(status: str, patch_status: Any) -> str:
-    if status == "patch_verified" or str(patch_status or "").upper() == "VERIFIED_SECURE":
+    patch = str(patch_status or "").upper()
+    if status == "patch_verified" or patch == "VERIFIED_SECURE":
         return "verified"
+    if patch == "VERIFICATION_FAILED":
+        return "regression_detected"
     if patch_status:
         return "verifying"
     return "not_recorded"
@@ -164,11 +168,22 @@ def to_finding_record(row: dict[str, Any], *, repository: str, revision: str) ->
 
 
 def latest_run_id(db_path: str) -> Optional[str]:
+    """The most recently started run, including one that found nothing."""
     with sqlite3.connect(db_path) as conn:
+        try:
+            row = conn.execute("SELECT run_id FROM runs ORDER BY started DESC, rowid DESC LIMIT 1").fetchone()
+            if row:
+                return row[0]
+        except sqlite3.OperationalError:
+            pass  # a database from before the runs table
         row = conn.execute(
             "SELECT run_id FROM findings WHERE run_id IS NOT NULL ORDER BY timestamp DESC, id DESC LIMIT 1"
         ).fetchone()
     return row[0] if row else None
+
+
+class UnknownRunError(LookupError):
+    pass
 
 
 def run_ids(db_path: str) -> set[str]:
@@ -189,6 +204,8 @@ def run_ids(db_path: str) -> set[str]:
 def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional[str] = None) -> dict[str, Any]:
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"Mantis database not found: {db_path}")
+    if run_id and run_id not in run_ids(db_path):
+        raise UnknownRunError(f"Mantis run not found in {db_path}: {run_id}")
     rid = run_id or latest_run_id(db_path)
     findings: list[dict[str, Any]] = []
     if rid:
@@ -207,7 +224,11 @@ def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
-    doc = export_run(args.db, repository=args.repository, revision=args.revision, run_id=args.run_id)
+    try:
+        doc = export_run(args.db, repository=args.repository, revision=args.revision, run_id=args.run_id)
+    except (FileNotFoundError, UnknownRunError) as err:
+        print(str(err), file=sys.stderr)
+        return 1
     json.dump(doc, sys.stdout)
     sys.stdout.write("\n")
     return 0
@@ -219,7 +240,24 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     argv = [sys.executable, os.path.join(_HERE, "main.py"), os.path.abspath(args.target),
             "--db", db_path, "--yes", *args.mantis_args]
     # Mantis's own progress goes to stderr so stdout carries only the export.
-    proc = subprocess.run(argv, cwd=_HERE, stdout=sys.stderr, stderr=sys.stderr)
+    # It runs in its own process group, and a stop sent to the bridge stops the
+    # whole scan, so a caller's timeout never leaves a scan spending in the background.
+    proc = subprocess.Popen(argv, cwd=_HERE, stdout=sys.stderr, stderr=sys.stderr, start_new_session=True)
+
+    def _stop(signum: int, _frame: Any) -> None:
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+        sys.exit(128 + signum)
+
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, _stop)
+    proc.wait()
     new_runs = run_ids(db_path) - before
     run_id = sorted(new_runs)[-1] if len(new_runs) == 1 else (latest_run_id(db_path) if new_runs else None)
     doc = export_run(db_path, repository=args.repository, revision=args.revision, run_id=run_id) if run_id else {
@@ -229,8 +267,13 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     doc["mantisExitCode"] = proc.returncode
     json.dump(doc, sys.stdout)
     sys.stdout.write("\n")
-    # Exit 2 is Mantis pausing on a budget with findings saved: still a result.
-    return 0 if proc.returncode in (0, 2) else proc.returncode
+    # A run that was recorded is a result, even when Mantis exits nonzero (a
+    # budget pause, or one campaign failing while others saved findings): the
+    # caller gets the findings with mantisExitCode and decides how to treat
+    # incomplete coverage. Only a run that never started is a failure.
+    if run_id is None and proc.returncode != 0:
+        return proc.returncode
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:

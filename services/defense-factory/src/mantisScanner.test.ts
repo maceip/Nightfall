@@ -99,4 +99,24 @@ describe('MantisScanner', () => {
       }),
     ).rejects.toThrow(/Mantis database not found/);
   });
+  it('refuses Mantis-managed dynamic sandboxes so proofs stay in LiteBox', async () => {
+    const scanner = new MantisScanner({ pythonExecutable: PYTHON });
+    await expect(
+      scanner.scanRepository({
+        repository: 'asset-servicing',
+        localPath: tmp,
+        sandbox: 'gvisor' as unknown as 'static-only',
+      }),
+    ).rejects.toThrow(/only run static sandbox modes/);
+    await expect(
+      scanner.scanRepository({ repository: 'asset-servicing', localPath: tmp, extraArgs: ['--sandbox', 'remote'] }),
+    ).rejects.toThrow(/not extraArgs/);
+  });
+
+  it('reports an unknown run id as an error, not as a clean run', async () => {
+    const scanner = new MantisScanner({ pythonExecutable: PYTHON });
+    await expect(
+      scanner.exportRun({ repository: 'asset-servicing', dbPath, observedRevision: 'a1b2c3d', runId: 'no-such-run' }),
+    ).rejects.toThrow(/Mantis run not found/);
+  });
 });

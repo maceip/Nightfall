@@ -113,5 +113,90 @@ class NightfallBridgeTest(unittest.TestCase):
         self.assertEqual(nightfall_bridge._fix_verification("reported", "PROPOSED"), "verifying")
 
 
+    def test_latest_run_is_taken_from_the_runs_table_even_without_findings(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("INSERT INTO runs (run_id, started) VALUES ('run-clean', '2999-01-01 00:00:00')")
+        doc = nightfall_bridge.export_run(self.db, repository="acme/api", revision="r")
+        self.assertEqual(doc["runId"], "run-clean")
+        self.assertEqual(doc["findings"], [], "a clean latest run, not an older run's findings")
+
+    def test_an_unknown_run_id_is_an_error_not_a_clean_result(self):
+        with self.assertRaises(nightfall_bridge.UnknownRunError):
+            nightfall_bridge.export_run(self.db, repository="acme/api", revision="r", run_id="no-such-run")
+        out = subprocess.run(
+            [sys.executable, str(_REF / "nightfall_bridge.py"), "export", "--db", self.db,
+             "--repository", "acme/api", "--revision", "r", "--run-id", "no-such-run"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(out.returncode, 1)
+        self.assertEqual(out.stdout, "")
+
+    def test_failed_patch_verification_is_a_regression(self):
+        self.assertEqual(nightfall_bridge._fix_verification("static_confirmed", "VERIFICATION_FAILED"),
+                         "regression_detected")
+
+class NightfallBridgeScanTest(unittest.TestCase):
+    """The scan command, driving a stand-in for main.py placed next to a copy of the bridge."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        shutil.copy(_REF / "nightfall_bridge.py", self.tmp)
+        self.db = os.path.join(self.tmp, "mantis.db")
+        init_db(self.db)
+
+    def _main(self, body):
+        Path(self.tmp, "main.py").write_text(
+            "import sqlite3, sys, os, time\n"
+            "db = sys.argv[sys.argv.index('--db') + 1]\n" + body, encoding="utf-8")
+
+    def _scan(self, **kw):
+        return subprocess.Popen(
+            [sys.executable, os.path.join(self.tmp, "nightfall_bridge.py"), "scan", "--db", self.db,
+             "--repository", "acme/api", "--revision", "r", "--target", self.tmp],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kw)
+
+    def test_a_partially_failed_run_still_returns_its_findings(self):
+        self._main(
+            "c = sqlite3.connect(db)\n"
+            "c.execute(\"INSERT INTO runs (run_id) VALUES ('run-p')\")\n"
+            "c.execute(\"INSERT INTO findings (run_id, filepath, title, severity, description, line_numbers) "
+            "VALUES ('run-p', 'a.py', 'Kept', 'HIGH', 'd', '[3]')\")\n"
+            "c.commit()\n"
+            "sys.exit(1)\n")
+        out, err = self._scan().communicate(timeout=60)
+        doc = json.loads(out)
+        self.assertEqual(doc["runId"], "run-p")
+        self.assertEqual(doc["mantisExitCode"], 1)
+        self.assertEqual([f["title"] for f in doc["findings"]], ["Kept"])
+
+    def test_a_run_that_never_started_fails(self):
+        self._main("sys.exit(3)\n")
+        proc = self._scan()
+        proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 3)
+
+    def test_stopping_the_bridge_stops_the_scan(self):
+        pid_file = os.path.join(self.tmp, "child.pid")
+        self._main(f"open({pid_file!r}, 'w').write(str(os.getpid()))\ntime.sleep(300)\n")
+        proc = self._scan()
+        import time as _t
+        deadline = _t.time() + 30
+        while not os.path.exists(pid_file) and _t.time() < deadline:
+            _t.sleep(0.1)
+        child = int(Path(pid_file).read_text())
+        proc.terminate()
+        proc.communicate(timeout=60)
+        deadline = _t.time() + 30
+        alive = True
+        while _t.time() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                alive = False
+                break
+            _t.sleep(0.1)
+        self.assertFalse(alive, "the Mantis process outlived the bridge")
+
 if __name__ == "__main__":
     unittest.main()
