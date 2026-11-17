@@ -1,0 +1,482 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""The guest the reproducer runs PoCs in has no network and no host mounts.
+
+The reproducer deliberately executes attacker payloads: command injection,
+SSRF to attacker-chosen URLs, path traversal, deserialisation. Those are
+only safe to run because the microVM is created with egress and ingress
+denied and nothing from the host mounted in. This pins that creation call so
+a refactor cannot quietly hand the guest a NAT uplink or a bind mount.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+import unittest
+from pathlib import Path
+from unittest import mock
+
+_REF_ROOT = Path(__file__).resolve().parent.parent
+if str(_REF_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REF_ROOT))
+
+
+class _FakeFs:
+    def __init__(self):
+        self.dirs: list[str] = []
+
+    async def mkdir(self, path):
+        self.dirs.append(str(path))
+
+
+class _FakeSandbox:
+    def __init__(self):
+        self.fs = _FakeFs()
+
+
+class MicrosandboxCreationTest(unittest.TestCase):
+    def _create_kwargs(self) -> dict:
+        from core.environments import microsandbox_env as M
+
+        env = M.MicrosandboxEnvironment.__new__(M.MicrosandboxEnvironment)
+        env.target_path = ""
+        env.image = "mantis-sandbox:latest"
+        env.timeout = 30.0
+        env.memory = None
+        env.cpus = None
+        env._workdir = Path("/workspace")
+        env._sb = None
+        env._name = None
+        env._stage_error = None
+        env.is_initialized = False
+
+        seen: dict = {}
+
+        async def fake_create(name, **kwargs):
+            seen["name"] = name
+            seen.update(kwargs)
+            return _FakeSandbox()
+
+        with mock.patch.object(M.MsbSandbox, "create", side_effect=fake_create):
+            asyncio.run(env.initialize())
+        return seen
+
+    def test_the_guest_is_created_with_all_network_denied(self):
+        from microsandbox.types import Action, Network
+
+        kwargs = self._create_kwargs()
+        self.assertIn("network", kwargs, "the sandbox is created without saying what network it gets")
+        net = kwargs["network"]
+        self.assertEqual(net, Network.none())
+        self.assertEqual(net.policy.default_egress, Action.DENY)
+        self.assertEqual(net.policy.default_ingress, Action.DENY)
+        self.assertEqual(net.policy.rules, ())
+        self.assertEqual(dict(net.ports), {}, "no port of the guest is published to the host")
+
+    def test_the_guest_gets_no_host_mounts_or_environment(self):
+        kwargs = self._create_kwargs()
+        for key in ("volumes", "mounts", "env", "environment", "privileged"):
+            self.assertNotIn(key, kwargs, f"{key!r} would reach into the host from the guest")
+        self.assertEqual(kwargs.get("pull_policy"), __import__("microsandbox").PullPolicy.NEVER,
+                         "a run must not fetch images; the operator pulls what the guest runs")
+        self.assertTrue(str(kwargs["name"]).startswith("mantis-msb-"))
+
+    def test_sizing_is_optional_and_bounded(self):
+        from core.environments import microsandbox_env as M
+
+        env = M.MicrosandboxEnvironment.__new__(M.MicrosandboxEnvironment)
+        with mock.patch.object(M.os, "access", return_value=True):
+            M.MicrosandboxEnvironment.__init__(env, target_path="", memory=4096, cpus=4)
+        self.assertEqual((env.memory, env.cpus), (4096, 4))
+        with mock.patch.object(M.os, "access", return_value=True):
+            M.MicrosandboxEnvironment.__init__(env, target_path="", memory=10**9, cpus=10**3)
+        self.assertEqual((env.memory, env.cpus), (16384, 16), "a workflow file cannot ask one VM for the host")
+        with mock.patch.object(M.os, "access", return_value=True):
+            M.MicrosandboxEnvironment.__init__(env, target_path="")
+        self.assertEqual((env.memory, env.cpus), (None, None), "defaults stay the runtime's")
+        env.memory, env.cpus = 2048, 2
+        env._sb = None; env._name = None; env._stage_error = None; env.is_initialized = False
+        env._workdir = Path("/workspace")
+        seen: dict = {}
+
+        async def fake_create(name, **kwargs):
+            seen.update(kwargs)
+            return _FakeSandbox()
+
+        with mock.patch.object(M.MsbSandbox, "create", side_effect=fake_create):
+            asyncio.run(env.initialize())
+        self.assertEqual((seen.get("memory"), seen.get("cpus")), (2048, 2))
+        self.assertEqual(seen["network"], __import__("microsandbox.types", fromlist=["Network"]).Network.none(),
+                         "sizing never changes the network")
+
+    def test_the_source_says_the_same_thing(self):
+        """A second, independent witness: the literal call site. If someone
+        routes creation through a helper the test above still holds; this one
+        catches a network argument that is computed rather than written."""
+        import inspect
+
+        from core.environments import microsandbox_env as M
+
+        src = inspect.getsource(M.MicrosandboxEnvironment._ensure)
+        self.assertIn("network=Network.none()", src)
+
+
+class BoundedGuestStreamTest(unittest.IsolatedAsyncioTestCase):
+    """Host memory stays bounded even when a guest emits unbounded stdout or files."""
+
+    def test_run_bounded_subprocess_caps_buffered_bytes_and_preserves_total(self):
+        from core.environments.base import format_bounded_output, run_bounded_subprocess
+        from core.truncation import TRUNCATION_MARKER_PREFIX
+
+        res = run_bounded_subprocess(
+            [sys.executable, "-c", "import sys; sys.stdout.write('A' * 300000)"],
+            timeout=10.0,
+            max_stdout_bytes=65536,
+            max_stderr_bytes=4096,
+        )
+        self.assertEqual(res.returncode, 0)
+        self.assertFalse(res.timed_out)
+        self.assertTrue(res.stdout_overflowed)
+        self.assertEqual(len(res.stdout), 65536)
+        self.assertEqual(res.stdout_total_bytes, 300000)
+
+        formatted = format_bounded_output(
+            res.stdout, res.stdout_total_bytes, 16000, what="sandbox stdout"
+        )
+        self.assertTrue(formatted.startswith("A" * 16000 + "\n" + TRUNCATION_MARKER_PREFIX))
+        self.assertIn("after 16000 of 300000 chars", formatted)
+
+    def test_run_bounded_subprocess_kills_early_on_overflow_when_requested(self):
+        from core.environments.base import run_bounded_subprocess
+
+        res = run_bounded_subprocess(
+            [
+                sys.executable,
+                "-c",
+                "import sys\nwhile True:\n    sys.stdout.buffer.write(b'X' * 65536)\n",
+            ],
+            timeout=10.0,
+            max_stdout_bytes=131072,
+            max_stderr_bytes=4096,
+            kill_on_stdout_overflow=True,
+        )
+        self.assertTrue(res.stdout_overflowed)
+        self.assertEqual(len(res.stdout), 131072)
+
+    async def test_gvisor_and_gce_read_file_reject_oversized_guest_files(self):
+        import base64
+        from core.environments import gce_env, gvisor_env
+
+        with mock.patch("shutil.which", return_value="/usr/bin/docker"):
+            gv = gvisor_env.GvisorEnvironment(container_tool="docker")
+        gv._ensure = mock.AsyncMock(return_value=None)
+
+        with mock.patch.object(gvisor_env, "MAX_GUEST_FILE_BYTES", 1024):
+            with mock.patch(
+                "subprocess.run",
+                return_value=mock.MagicMock(returncode=0, stdout=b"Z" * 2048, stderr=b""),
+            ):
+                with self.assertRaises(ValueError) as ctx:
+                    await gv.read_file("huge.bin")
+        self.assertIn("exceeds maximum sandbox read size", str(ctx.exception))
+
+        gce = gce_env.GceEnvironment(project="proj", gcloud_bin="/bin/true")
+        gce._ensure = mock.AsyncMock(return_value=None)
+        oversized_b64 = base64.b64encode(b"Y" * 2048)
+        with (
+            mock.patch.object(gce_env, "MAX_GUEST_FILE_BYTES", 1024),
+            mock.patch.object(gce_env, "_MAX_B64_GUEST_FILE_BYTES", 1400),
+            mock.patch(
+                "subprocess.run",
+                return_value=mock.MagicMock(returncode=0, stdout=oversized_b64, stderr=b""),
+            ),
+        ):
+            with self.assertRaises(ValueError) as ctx2:
+                await gce.read_file("huge.bin")
+        self.assertIn("exceeds maximum sandbox read size", str(ctx2.exception))
+
+    async def test_static_only_read_file_caps_bytes_read_from_disk(self):
+        import tempfile
+        from core.environments import static_env
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            small = root / "ok.txt"
+            small.write_bytes(b"hello world")
+            big = root / "huge.bin"
+            big.write_bytes(b"B" * 4096)
+
+            env = static_env.StaticOnlyEnvironment(target_path=str(root))
+            with mock.patch.object(static_env, "MAX_STATIC_READ_BYTES", 1024):
+                self.assertEqual(await env.read_file(Path("ok.txt")), b"hello world")
+                with self.assertRaises(ValueError) as ctx:
+                    await env.read_file(Path("huge.bin"))
+            self.assertIn("exceeds maximum static read size", str(ctx.exception))
+
+
+class StagingBudgetTest(unittest.IsolatedAsyncioTestCase):
+    """Staging enforces file-count and cumulative-byte ceilings before copying."""
+
+    async def test_staging_caps_enforce_file_count_and_cumulative_bytes(self):
+        import tempfile
+        from core.environments import microsandbox_env as M
+        from core.environments import staging
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "repo"
+            root.mkdir()
+            for idx in range(4):
+                (root / f"f{idx}.py").write_bytes(b"x" * 600)
+
+            # Read-only enumeration remains available even when staging caps are lowered.
+            with (
+                mock.patch.object(staging, "MAX_STAGING_FILES", 2),
+                mock.patch.object(staging, "MAX_STAGING_BYTES", 1000),
+            ):
+                self.assertEqual(len(staging.get_vetted_staging_files(root)), 4)
+
+            dest = Path(td) / "staged"
+            with mock.patch.object(staging, "MAX_STAGING_FILES", 3):
+                with self.assertRaises(RuntimeError) as ctx_files:
+                    staging.stage_to_directory(root, dest)
+            self.assertIn("MANTIS_MAX_STAGING_FILES", str(ctx_files.exception))
+            self.assertFalse(dest.exists())
+
+            tar_out = Path(td) / "staged.tar.gz"
+            with mock.patch.object(staging, "MAX_STAGING_BYTES", 1500):
+                with self.assertRaises(RuntimeError) as ctx_bytes:
+                    staging.create_vetted_tar_archive(root, tar_out)
+            self.assertIn("MANTIS_MAX_STAGING_BYTES", str(ctx_bytes.exception))
+            self.assertFalse(tar_out.exists())
+
+            env = M.MicrosandboxEnvironment.__new__(M.MicrosandboxEnvironment)
+            env.target_path = str(root)
+            env.image = "mantis-sandbox:latest"
+            env.timeout = 30.0
+            env.memory = None
+            env.cpus = None
+            env._workdir = Path("/workspace")
+            env._sb = None
+            env._name = None
+            env._stage_error = None
+            env.is_initialized = False
+
+            async def fake_create(name, **kwargs):
+                return _FakeSandbox()
+
+            with (
+                mock.patch.object(M.MsbSandbox, "create", side_effect=fake_create),
+                mock.patch.object(staging, "MAX_STAGING_BYTES", 1500),
+            ):
+                with self.assertRaises(RuntimeError) as ctx_msb:
+                    await env.initialize()
+            self.assertIn("MANTIS_MAX_STAGING_BYTES", str(ctx_msb.exception))
+
+
+class GceHardeningTest(unittest.IsolatedAsyncioTestCase):
+    """GCE ssh calls isolate host stdin, disable agent forwarding, and probe PGA VIPs by IP."""
+
+    async def test_gce_ssh_isolates_stdin_and_disables_forwarding(self):
+        import subprocess
+        from core.environments import gce_env
+
+        gce = gce_env.GceEnvironment(project="proj", zone="us-central1-a", gcloud_bin="/bin/true")
+        gce._ensure = mock.AsyncMock(return_value=None)
+
+        # 1. _run_gcloud without stdin binds stdin=DEVNULL (never inheriting parent stdin)
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.MagicMock(returncode=0, stdout="ok", stderr="")
+            gce._run_gcloud(["compute", "instances", "list"])
+            _, kwargs = mock_run.call_args
+            self.assertEqual(kwargs.get("stdin"), subprocess.DEVNULL)
+            self.assertNotIn("input", kwargs)
+
+        # 2. list_files binds stdin=DEVNULL and passes SSH forwarding hardening flags
+        with mock.patch("subprocess.run") as mock_list:
+            mock_list.return_value = mock.MagicMock(returncode=0, stdout="/workspace/a.py\n", stderr="")
+            files = await gce.list_files("")
+            self.assertEqual(files, ["a.py"])
+            argv, kwargs = mock_list.call_args
+            self.assertEqual(kwargs.get("stdin"), subprocess.DEVNULL)
+            self.assertIn("--ssh-flag=-oForwardAgent=no", argv[0])
+            self.assertIn("--ssh-flag=-oClearAllForwardings=yes", argv[0])
+
+        # 3. execute also carries SSH forwarding hardening flags
+        with mock.patch("subprocess.run") as mock_exec:
+            mock_exec.return_value = mock.MagicMock(returncode=0, stdout="hi\n", stderr="")
+            await gce.execute("echo hi")
+            argv_exec, _ = mock_exec.call_args
+            self.assertIn("--ssh-flag=-oForwardAgent=no", argv_exec[0])
+            self.assertIn("--ssh-flag=-oClearAllForwardings=yes", argv_exec[0])
+
+    def test_gce_isolation_probe_checks_pga_vips_directly_by_ip(self):
+        from core.environments.gce_env import ISOLATION_PROBE_SCRIPT
+
+        compiled = compile(ISOLATION_PROBE_SCRIPT, "<probe>", "exec")
+        self.assertIsNotNone(compiled)
+        self.assertIn("199.36.153.8", ISOLATION_PROBE_SCRIPT)
+        self.assertIn("199.36.153.4", ISOLATION_PROBE_SCRIPT)
+
+
+class GvisorHardeningTest(unittest.IsolatedAsyncioTestCase):
+    """gVisor containers validate runtime, drop capabilities, block new privileges, and bound lifetime."""
+
+    async def test_gvisor_validates_runtime_and_hardens_container_create(self):
+        import subprocess
+        from core.environments import gvisor_env
+
+        with mock.patch("shutil.which", return_value="/usr/bin/docker"):
+            with self.assertRaises(ValueError):
+                gvisor_env.GvisorEnvironment(runtime="runc", container_tool="docker")
+            with self.assertRaises(ValueError):
+                gvisor_env.GvisorEnvironment(runtime="crun", container_tool="docker")
+            gv = gvisor_env.GvisorEnvironment(runtime="runsc", container_tool="docker")
+
+        calls: list[tuple[list[str], dict]] = []
+
+        def _fake_run(argv, **kwargs):
+            calls.append((list(argv), dict(kwargs)))
+            return mock.MagicMock(returncode=0, stdout="", stderr="")
+
+        with mock.patch("subprocess.run", side_effect=_fake_run):
+            await gv.initialize()
+
+        create_argv, create_kwargs = calls[0]
+        self.assertEqual(create_kwargs.get("stdin"), subprocess.DEVNULL)
+        self.assertIn("--runtime=runsc", create_argv)
+        self.assertIn("--network=none", create_argv)
+        self.assertIn("--cap-drop=ALL", create_argv)
+        self.assertIn("--security-opt=no-new-privileges", create_argv)
+        self.assertIn("--tmpfs=/tmp:rw,nosuid,nodev,size=512m", create_argv)
+        self.assertNotIn("infinity", create_argv)
+        self.assertIn(str(gvisor_env.MAX_CONTAINER_LIFETIME_SECONDS), create_argv)
+
+
+class MicrosandboxHardeningTest(unittest.IsolatedAsyncioTestCase):
+    """Microsandbox bounds guest file I/O, hardens shell fallbacks, and verifies Network.none() before auto-promotion."""
+
+    def _make_env(self, sb):
+        from core.environments import microsandbox_env as M
+
+        env = M.MicrosandboxEnvironment.__new__(M.MicrosandboxEnvironment)
+        env.target_path = ""
+        env.image = "mantis-sandbox:latest"
+        env.timeout = 10.0
+        env.memory = None
+        env.cpus = None
+        env._workdir = Path("/workspace")
+        env._sb = sb
+        env._name = "mantis-msb-test"
+        env._stage_error = None
+        env.is_initialized = True
+        return env
+
+    async def test_microsandbox_read_and_write_enforce_byte_caps_and_fail_closed_fallbacks(self):
+        from core.environments import microsandbox_env as M
+
+        class _StubFs:
+            async def mkdir(self, _path):
+                return None
+
+            async def read(self, _path):
+                return b"R" * 2048
+
+            async def write(self, _path, _data):
+                raise RuntimeError("fs.write unavailable")
+
+        class _StubOut:
+            def __init__(self, exit_code: int, stdout_text: str = "", stderr_text: str = ""):
+                self.exit_code = exit_code
+                self.stdout_text = stdout_text
+                self.stderr_text = stderr_text
+
+        class _StubSb:
+            def __init__(self):
+                self.fs = _StubFs()
+                self.next_out = _StubOut(0, "")
+
+            async def shell(self, _cmd, **_kwargs):
+                return self.next_out
+
+        sb = _StubSb()
+        env = self._make_env(sb)
+
+        # 1. Direct fs.read enforces MAX_GUEST_FILE_BYTES without falling back to shell cat
+        with mock.patch.object(M, "MAX_GUEST_FILE_BYTES", 1024):
+            with self.assertRaises(ValueError) as ctx_read:
+                await env.read_file("huge.bin")
+            self.assertIn("exceeds maximum sandbox read size", str(ctx_read.exception))
+
+            # 2. write_file enforces MAX_GUEST_FILE_BYTES upfront
+            with self.assertRaises(ValueError) as ctx_write:
+                await env.write_file("huge.bin", b"W" * 2048)
+            self.assertIn("exceeds maximum sandbox write size", str(ctx_write.exception))
+
+        # 3. Shell fallback for read_file refuses symlinks and oversized files
+        async def _fail_read(_path):
+            raise RuntimeError("fs.read unavailable")
+
+        sb.fs.read = _fail_read
+        sb.next_out = _StubOut(2, "MSB_ERR:SYMLINK\n")
+        with self.assertRaises(PermissionError):
+            await env.read_file("escape_link")
+
+        sb.next_out = _StubOut(4, "MSB_ERR:TOO_LARGE:99999\n")
+        with mock.patch.object(M, "MAX_GUEST_FILE_BYTES", 1024):
+            with self.assertRaises(ValueError):
+                await env.read_file("too_big.bin")
+
+        # 4. Shell fallback for write_file refuses symlinks and surfaces non-zero exit codes
+        sb.next_out = _StubOut(2, "", "MSB_ERR:SYMLINK\n")
+        with self.assertRaises(PermissionError):
+            await env.write_file("link_out", b"payload")
+
+        sb.next_out = _StubOut(1, "", "disk full")
+        with self.assertRaises(RuntimeError) as ctx_fb_write:
+            await env.write_file("out.txt", b"payload")
+        self.assertIn("disk full", str(ctx_fb_write.exception))
+
+    def test_configure_refuses_microsandbox_auto_promotion_when_network_none_is_permissive(self):
+        from microsandbox.types import Action, Network
+        from scripts import configure
+
+        ok, _ = configure.verify_microsandbox_isolation_primitives()
+        self.assertTrue(ok)
+
+        bad_net = mock.MagicMock()
+        bad_net.policy = mock.MagicMock(
+            default_egress=Action.ALLOW,
+            default_ingress=Action.DENY,
+            rules=(),
+        )
+        bad_net.ports = {}
+
+        with (
+            mock.patch.object(Network, "none", return_value=bad_net),
+            mock.patch.object(configure, "check_microsandbox_virtualization", return_value=(True, "KVM ok")),
+            mock.patch.object(configure, "find_cached_microsandbox_image", return_value="mantis-sandbox:latest"),
+            mock.patch("shutil.which", return_value=None),
+        ):
+            ok_bad, reason_bad = configure.verify_microsandbox_isolation_primitives()
+            self.assertFalse(ok_bad)
+            self.assertIn("Action.DENY", reason_bad)
+            caps = configure.detect_capabilities()
+            self.assertNotIn("microsandbox", caps["available_sandboxes"])
+            self.assertEqual(caps["recommended_sandbox"], "static-only")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -449,6 +449,9 @@ importers:
       '@nightfall/shared-memory':
         specifier: workspace:*
         version: link:../../packages/shared-memory
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
 
   services/red-team:
     dependencies:

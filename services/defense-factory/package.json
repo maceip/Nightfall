@@ -16,6 +16,7 @@
     "@nightfall/policy-gate": "workspace:*",
     "@nightfall/shared-memory": "workspace:*",
     "@nightfall/audit-ledger": "workspace:*",
-    "@nightfall/model-gateway": "workspace:*"
+    "@nightfall/model-gateway": "workspace:*",
+    "zod": "^3.24.2"
   }
 }

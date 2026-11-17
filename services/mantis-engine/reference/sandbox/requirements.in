@@ -1,0 +1,4 @@
+flask
+
+# Security floor on a transitive dependency (via flask).
+werkzeug>=3.1.9
