@@ -83,7 +83,7 @@ class NightfallBridgeTest(unittest.TestCase):
         by_title = {f["title"]: f for f in doc["findings"]}
         confirmed = by_title["SQL injection in search"]
         self.assertEqual(confirmed["status"], "triaged")
-        self.assertIn("red-team", confirmed["sources"])
+        self.assertEqual(confirmed["sources"], ["nightfall", "sast"], "a Mantis proof is not a Nightfall red-team proof")
         self.assertEqual(by_title["Debug endpoint left on"]["status"], "discarded_fp")
 
     def test_merged_duplicates_are_left_out(self):
@@ -107,9 +107,11 @@ class NightfallBridgeTest(unittest.TestCase):
         self.assertEqual(nightfall_bridge._severity("CRITICAL"), "critical")
         self.assertEqual(nightfall_bridge._severity("info"), "informational")
         self.assertEqual(nightfall_bridge._severity(None), "medium")
-        self.assertEqual(nightfall_bridge._status("patch_verified"), "fixed")
+        self.assertEqual(nightfall_bridge._status("patch_verified"), "triaged", "Mantis never closes a finding")
         self.assertEqual(nightfall_bridge._status("reported"), "new")
-        self.assertEqual(nightfall_bridge._fix_verification("reported", "VERIFIED_SECURE"), "verified")
+        self.assertEqual(nightfall_bridge._fix_verification("reported", "VERIFIED_SECURE"), "verifying",
+                         "pending until Nightfall verifies the patch itself")
+        self.assertEqual(nightfall_bridge._fix_verification("patch_verified", None), "verifying")
         self.assertEqual(nightfall_bridge._fix_verification("reported", "PROPOSED"), "verifying")
 
 
@@ -134,6 +136,19 @@ class NightfallBridgeTest(unittest.TestCase):
     def test_failed_patch_verification_is_a_regression(self):
         self.assertEqual(nightfall_bridge._fix_verification("static_confirmed", "VERIFICATION_FAILED"),
                          "regression_detected")
+    def test_a_database_with_no_run_is_an_error(self):
+        empty = os.path.join(self.tmp, "empty.db")
+        init_db(empty)
+        with self.assertRaises(nightfall_bridge.NoRunError):
+            nightfall_bridge.export_run(empty, repository="acme/api", revision="r")
+
+    def test_resume_target_parsing(self):
+        self.assertEqual(nightfall_bridge._resume_target(["--resume", "run-9"]), "run-9")
+        self.assertEqual(nightfall_bridge._resume_target(["--resume=run-9"]), "run-9")
+        self.assertEqual(nightfall_bridge._resume_target(["--resume", "--yes"]), "")
+        self.assertEqual(nightfall_bridge._resume_target(["--resume"]), "")
+        self.assertIsNone(nightfall_bridge._resume_target(["--depth", "5"]))
+
 
 class NightfallBridgeScanTest(unittest.TestCase):
     """The scan command, driving a stand-in for main.py placed next to a copy of the bridge."""
@@ -150,10 +165,10 @@ class NightfallBridgeScanTest(unittest.TestCase):
             "import sqlite3, sys, os, time\n"
             "db = sys.argv[sys.argv.index('--db') + 1]\n" + body, encoding="utf-8")
 
-    def _scan(self, **kw):
+    def _scan(self, *mantis_args, **kw):
         return subprocess.Popen(
             [sys.executable, os.path.join(self.tmp, "nightfall_bridge.py"), "scan", "--db", self.db,
-             "--repository", "acme/api", "--revision", "r", "--target", self.tmp],
+             "--repository", "acme/api", "--revision", "r", "--target", self.tmp, "--", *mantis_args],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kw)
 
     def test_a_partially_failed_run_still_returns_its_findings(self):
@@ -169,6 +184,26 @@ class NightfallBridgeScanTest(unittest.TestCase):
         self.assertEqual(doc["runId"], "run-p")
         self.assertEqual(doc["mantisExitCode"], 1)
         self.assertEqual([f["title"] for f in doc["findings"]], ["Kept"])
+
+    def test_a_resumed_run_is_exported(self):
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("INSERT INTO runs (run_id) VALUES ('run-r')")
+        self._main(
+            "c = sqlite3.connect(db)\n"
+            "c.execute(\"INSERT INTO findings (run_id, filepath, title, severity, description, line_numbers) "
+            "VALUES ('run-r', 'b.py', 'Found on resume', 'LOW', 'd', '[2]')\")\n"
+            "c.commit()\n")
+        out, _ = self._scan("--resume", "run-r").communicate(timeout=60)
+        doc = json.loads(out)
+        self.assertEqual(doc["runId"], "run-r")
+        self.assertEqual([f["title"] for f in doc["findings"]], ["Found on resume"])
+
+    def test_a_clean_exit_without_a_run_is_a_failure(self):
+        self._main("sys.exit(0)\n")
+        proc = self._scan()
+        out, _ = proc.communicate(timeout=60)
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(out, "")
 
     def test_a_run_that_never_started_fails(self):
         self._main("sys.exit(3)\n")

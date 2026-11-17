@@ -33,8 +33,11 @@ if _HERE not in sys.path:
 EXPORT_FORMAT = "mantis-nightfall/v1"
 
 _FALSE_POSITIVE = {"false_positive", "non_viable", "sample_or_test", "accepted_risk"}
-_FIXED = {"patch_verified", "mitigated"}
-_TRIAGED = {"confirmed", "viable", "static_confirmed", "reproduced", "dynamic_confirmed"}
+# Mantis's own proof and patch verdicts come from Mantis's sandbox, not from
+# Nightfall's RedTeamEngine / LiteBox proof chain, so they never close a finding
+# here: a "patched" or "verified" Mantis finding arrives triaged and pending.
+_TRIAGED = {"confirmed", "viable", "static_confirmed", "reproduced", "dynamic_confirmed",
+            "patch_verified", "mitigated"}
 _SKIPPED = {"duplicate_merged", "archived"}
 _SEVERITIES = {"critical", "high", "medium", "low"}
 _LOCATION = re.compile(r"^(?P<file>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?(?::.*)?$")
@@ -53,20 +56,21 @@ def _status(raw: Any) -> str:
     value = str(raw or "").strip().lower()
     if value in _FALSE_POSITIVE:
         return "discarded_fp"
-    if value in _FIXED:
-        return "fixed"
     if value in _TRIAGED:
         return "triaged"
     return "new"
 
 
 def _fix_verification(status: str, patch_status: Any) -> str:
+    """Mantis's verdict on a patch, which Nightfall still has to verify itself.
+
+    A failed re-attack is surfaced as a regression; a Mantis "verified" patch
+    stays pending (``verifying``) until Nightfall's own proof runs.
+    """
     patch = str(patch_status or "").upper()
-    if status == "patch_verified" or patch == "VERIFIED_SECURE":
-        return "verified"
     if patch == "VERIFICATION_FAILED":
         return "regression_detected"
-    if patch_status:
+    if patch_status or status == "patch_verified":
         return "verifying"
     return "not_recorded"
 
@@ -137,8 +141,6 @@ def to_finding_record(row: dict[str, Any], *, repository: str, revision: str) ->
     cwe = str(row.get("cwe") or "").strip()
     cluster_seed = row.get("lineage_id") or row.get("signature") or f"{cwe}:{row.get('filepath')}:{title}"
     sources = ["nightfall", "sast"]
-    if raw_status in {"dynamic_confirmed", "reproduced", "patch_verified"}:
-        sources.append("red-team")
     record: dict[str, Any] = {
         "id": fid,
         "title": title,
@@ -186,6 +188,10 @@ class UnknownRunError(LookupError):
     pass
 
 
+class NoRunError(LookupError):
+    pass
+
+
 def run_ids(db_path: str) -> set[str]:
     if not os.path.exists(db_path):
         return set()
@@ -207,6 +213,8 @@ def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional
     if run_id and run_id not in run_ids(db_path):
         raise UnknownRunError(f"Mantis run not found in {db_path}: {run_id}")
     rid = run_id or latest_run_id(db_path)
+    if not rid:
+        raise NoRunError(f"No Mantis run is recorded in {db_path}")
     findings: list[dict[str, Any]] = []
     if rid:
         with sqlite3.connect(db_path) as conn:
@@ -226,7 +234,7 @@ def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional
 def _cmd_export(args: argparse.Namespace) -> int:
     try:
         doc = export_run(args.db, repository=args.repository, revision=args.revision, run_id=args.run_id)
-    except (FileNotFoundError, UnknownRunError) as err:
+    except (FileNotFoundError, UnknownRunError, NoRunError) as err:
         print(str(err), file=sys.stderr)
         return 1
     json.dump(doc, sys.stdout)
@@ -258,22 +266,46 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, _stop)
     proc.wait()
-    new_runs = run_ids(db_path) - before
-    run_id = sorted(new_runs)[-1] if len(new_runs) == 1 else (latest_run_id(db_path) if new_runs else None)
-    doc = export_run(db_path, repository=args.repository, revision=args.revision, run_id=run_id) if run_id else {
-        "format": EXPORT_FORMAT, "runId": None, "repository": args.repository,
-        "observedRevision": args.revision, "findings": [],
-    }
+    run_id = _scanned_run_id(db_path, before, args.mantis_args)
+    if run_id is None:
+        # Mantis recorded no run: a failure to start, never a clean result.
+        print(f"Mantis recorded no run (exit code {proc.returncode})", file=sys.stderr)
+        return proc.returncode or 1
+    doc = export_run(db_path, repository=args.repository, revision=args.revision, run_id=run_id)
     doc["mantisExitCode"] = proc.returncode
     json.dump(doc, sys.stdout)
     sys.stdout.write("\n")
     # A run that was recorded is a result, even when Mantis exits nonzero (a
     # budget pause, or one campaign failing while others saved findings): the
     # caller gets the findings with mantisExitCode and decides how to treat
-    # incomplete coverage. Only a run that never started is a failure.
-    if run_id is None and proc.returncode != 0:
-        return proc.returncode
+    # incomplete coverage.
     return 0
+
+
+def _resume_target(mantis_args: list[str]) -> Optional[str]:
+    """The run named by --resume: its id, "" for "the latest", None without --resume."""
+    for i, arg in enumerate(mantis_args):
+        if arg.startswith("--resume="):
+            return arg.split("=", 1)[1]
+        if arg == "--resume":
+            nxt = mantis_args[i + 1] if i + 1 < len(mantis_args) else ""
+            return "" if not nxt or nxt.startswith("-") else nxt
+    return None
+
+
+def _scanned_run_id(db_path: str, before: set[str], mantis_args: list[str]) -> Optional[str]:
+    """The run this scan wrote: a new run, or the run it resumed."""
+    new_runs = run_ids(db_path) - before
+    if len(new_runs) == 1:
+        return next(iter(new_runs))
+    if new_runs:
+        return latest_run_id(db_path)
+    resumed = _resume_target(mantis_args)
+    if resumed:
+        return resumed if resumed in run_ids(db_path) else None
+    if resumed == "":
+        return latest_run_id(db_path)
+    return None
 
 
 def build_parser() -> argparse.ArgumentParser:
