@@ -172,6 +172,20 @@ describe('@nightfall/sandbox-runtime (Microsoft LiteBox Library OS + Confined Pr
 
     const attestation = await rt.destroySandbox(sbx.id);
     expect(attestation.sha256Attestation).toMatch(/^[0-9a-f]{64}$/);
+    // A Node workload never runs in LiteBox; the timed-out command still counts as executed.
+    expect(attestation.backend).toBe('process-confined');
+    expect(attestation.backendsUsed).toEqual(['process-confined']);
+    expect(attestation.commandsExecuted).toBe(1);
     await expect(fs.access(sbx.workDir)).rejects.toThrow();
+  });
+
+  it('never reports LiteBox isolation for a sandbox in which nothing executed', async () => {
+    const rt = new DisposableSandboxRuntime({ defaultMode: 'litebox-preferred' });
+    runtimes.push(rt);
+    const sbx = await rt.createSandbox({ prefix: 'nf-idle', maxDurationMs: 5_000 });
+    const attestation = await rt.destroySandbox(sbx.id);
+    expect(attestation.backend).toBe('process-confined');
+    expect(attestation.backendsUsed).toEqual([]);
+    expect(attestation.commandsExecuted).toBe(0);
   });
 });

@@ -2,6 +2,7 @@ import http from 'node:http';
 import {
   NewScanRequestSchema,
   ScorecardScanRequestSchema,
+  type SignedScopeManifest,
 } from '@nightfall/core-contracts';
 import { NightfallOrchestrator } from '@nightfall/closed-loop-orchestrator';
 
@@ -193,9 +194,16 @@ export function createApiServer(
       const mergeMatch = /^\/api\/fixes\/([^/]+)\/merge-and-verify$/.exec(pathname);
       if (mergeMatch && method === 'POST') {
         const fixId = decodeURIComponent(mergeMatch[1]!);
-        await readJsonBody(req);
+        const body = await readJsonBody(req);
+        const signedManifest =
+          body.signedManifest && typeof body.signedManifest === 'object'
+            ? (body.signedManifest as SignedScopeManifest)
+            : undefined;
         const { fix, finding, overview, scorecardReport, repositories } =
-          await orchestrator.mergeAndVerifyFix(fixId);
+          await orchestrator.mergeAndVerifyFix(
+            fixId,
+            signedManifest ? { signedManifest } : undefined,
+          );
         sendJson(res, 200, {
           fix,
           finding,
@@ -243,7 +251,11 @@ export function createApiServer(
         const campaignId = decodeURIComponent(launchMatch[1]!);
         const body = await readJsonBody(req);
         const yamlText = typeof body.yamlText === 'string' ? body.yamlText : undefined;
-        const result = await orchestrator.launchCampaign(campaignId, yamlText);
+        const signedManifest =
+          body.signedManifest && typeof body.signedManifest === 'object'
+            ? (body.signedManifest as SignedScopeManifest)
+            : undefined;
+        const result = await orchestrator.launchCampaign(campaignId, yamlText, signedManifest);
         sendJson(res, 200, result);
         return;
       }

@@ -2,7 +2,14 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { OverviewSummary, StreamEvent } from '@nightfall/core-contracts';
+import {
+  generateScopeKeyPair,
+  parseCampaignYaml,
+  scopeSignerRegistryOf,
+  signCampaignManifest,
+  type OverviewSummary,
+  type StreamEvent,
+} from '@nightfall/core-contracts';
 import { NightfallOrchestrator } from './index.js';
 
 function assertExactSankeyConservation(overview: OverviewSummary): void {
@@ -222,5 +229,38 @@ describe('@nightfall/closed-loop-orchestrator Zero-Mock SQLite NightfallOrchestr
     expect(stateAfterReopen.killSwitchEngaged).toBe(true);
     expect(orch2.auditLedger.verifyIntegrity().valid).toBe(true);
     expect(stateAfterReopen.auditEntries.length).toBe(stateBeforeClose.auditEntries.length);
+  });
+
+  it('refuses to launch against a real target without an operator-signed scope, and accepts a pinned signature', async () => {
+    const operator = generateScopeKeyPair('ops-lead');
+    const orch = new NightfallOrchestrator({
+      scopeSigners: scopeSignerRegistryOf([{ ...operator, principal: 'Ops Lead' }]),
+    });
+    instances.push(orch);
+    await orch.ensureBootstrapped();
+
+    const { campaign: draft } = orch.prepareCampaign({
+      prompt: 'Probe tenant isolation',
+      targetUrl: 'https://third-party.example.org',
+      askForApproval: true,
+      modelId: 'gpt-6-cyber-ultra',
+    });
+    await expect(orch.launchCampaign(draft.id)).rejects.toThrow(/Scope not authorized/);
+
+    const selfMinted = generateScopeKeyPair(`key-${draft.id}`);
+    const manifest = parseCampaignYaml(draft.yamlText);
+    await expect(
+      orch.launchCampaign(
+        draft.id,
+        undefined,
+        signCampaignManifest(manifest, selfMinted.privateKeyPem, selfMinted.keyId),
+      ),
+    ).rejects.toThrow(/not a pinned authorized signer/);
+
+    const rejections = orch.auditLedger
+      .list()
+      .filter((e) => e.action === 'scope.authorization.rejected');
+    expect(rejections.length).toBe(2);
+    expect(orch.getBootstrapState().campaigns.find((c) => c.id === draft.id)?.status).toBe('draft');
   });
 });

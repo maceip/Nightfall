@@ -45,7 +45,8 @@ Nightfall/
 ## Quickstart
 
 ```bash
-# Build/provision Microsoft LiteBox and the vendored Nightfall Scorecard Go engine
+# Build Microsoft LiteBox (litebox_runner_linux_userland, litebox_packager, litebox_syscall_rewriter)
+# and the vendored Nightfall Scorecard Go engine. Required for `pnpm test` to pass.
 ./infra/litebox/build-litebox.sh
 pnpm build:scorecard
 
@@ -57,7 +58,7 @@ pnpm typecheck
 pnpm test
 
 # Evaluate supply-chain & CI workflow posture from the fused Nightfall CLI
-pnpm --filter @nightfall/nightfall-cli exec tsx src/bin.ts scorecard --local .
+pnpm --filter @nightfall/nightfall-cli exec tsx src/cli.ts scorecard .
 
 # Start the live REST + SSE API Gateway (:4000) + local staging target (:4010)
 pnpm dev:api
@@ -72,6 +73,31 @@ pnpm dev:desktop
 NIGHTFALL_DEBUG_BUILD=1 NIGHTFALL_PREVIEW_IDENTITY=1 pnpm bundle:desktop:dmg
 NIGHTFALL_DEBUG_BUILD=1 NIGHTFALL_PREVIEW_IDENTITY=1 pnpm bundle:desktop:msi
 ```
+
+---
+
+## Authorizing a campaign scope
+
+Nightfall sends traffic to a target only when its `campaign.yaml` is signed by a key you pinned in
+advance. The runtime cannot create that key. The bundled staging server is the one exception: the
+runtime starts it on loopback itself, so it may authorize traffic to it, and only traffic that
+reaches a loopback address.
+
+```bash
+# Once per accountable person. Keep the private key off the Nightfall host.
+pnpm cli keygen --key-id ops-lead --principal "Ops Lead" --out ~/.nightfall/ops-lead.pem
+
+# Pin the printed entry in a registry file and point Nightfall at it:
+#   { "version": 1, "signers": [ { "keyId": "ops-lead", "principal": "Ops Lead", "publicKeyPem": "..." } ] }
+export NIGHTFALL_SCOPE_SIGNERS=/etc/nightfall/scope-signers.json
+
+# Sign each scope. The authorization expires (24h by default).
+pnpm cli sign campaign.yaml --key ~/.nightfall/ops-lead.pem --key-id ops-lead --valid-for 8h
+```
+
+Send the resulting `signedManifest` as the `signedManifest` field of
+`POST /api/red-team/campaigns/:id/launch`. Signers can be limited to certain target origins
+(`allowedTargetOrigins`), given an expiry (`notAfter`) or revoked (`revoked: true`). See `audit.md` §12.
 
 ---
 

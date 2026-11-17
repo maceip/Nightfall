@@ -15,9 +15,15 @@ import {
   ScorecardScanRequestSchema,
   StreamEventSchema,
   generateScopeKeyPair,
+  loadScopeSignerRegistry,
   parseCampaignYaml,
+  scopeSignerRegistryOf,
   serializeCampaignYaml,
   signCampaignManifest,
+  verifyScopeAuthorization,
+  type ScopeSignerRegistry,
+  type ScopeSigningKeyPair,
+  type SignedScopeManifest,
   type AuditEntry,
   type CampaignYamlV5,
   type EvidenceBundle,
@@ -146,7 +152,15 @@ export interface NightfallOrchestratorOptions {
   sqlitePath?: string;
   workspaceReposRoot?: string;
   stagingTargetUrl?: string;
+  /**
+   * Operator-pinned scope signers. Defaults to the registry file named by NIGHTFALL_SCOPE_SIGNERS;
+   * with neither, no campaign against a real target can be launched.
+   */
+  scopeSigners?: ScopeSignerRegistry;
 }
+
+const BUNDLED_STAGING_LOGICAL_ORIGIN = 'https://staging.northstardocs.com';
+const BUNDLED_STAGING_SIGNER_KEY_ID = 'nightfall-bundled-staging-loopback';
 
 export interface BootstrapPayload {
   overview: OverviewSummary;
@@ -187,6 +201,8 @@ export class NightfallOrchestrator {
   readonly scorecardService: ScorecardService;
 
   private readonly configuredStagingTargetUrl?: string;
+  private readonly operatorScopeSigners: ScopeSignerRegistry;
+  private bundledStagingScopeKey: ScopeSigningKeyPair | null = null;
   private ephemeralStagingServer: StartedStagingTargetServer | null = null;
   private readonly ownsTempWorkspace: boolean;
   private bootstrapPromise: Promise<void> | null = null;
@@ -198,6 +214,7 @@ export class NightfallOrchestrator {
     const sqlitePath = options?.sqlitePath ?? ':memory:';
     this.store = new NightfallSqliteStore(sqlitePath);
     this.configuredStagingTargetUrl = options?.stagingTargetUrl;
+    this.operatorScopeSigners = options?.scopeSigners ?? loadScopeSignerRegistry();
 
     if (options?.workspaceReposRoot) {
       this.workspaceReposRoot = path.resolve(options.workspaceReposRoot);
@@ -291,6 +308,56 @@ export class NightfallOrchestrator {
       this.ephemeralStagingServer = await startStagingTargetServer(0);
     }
     return stripTrailingSlash(this.ephemeralStagingServer.baseUrl);
+  }
+
+  /**
+   * The bundled northstar staging server is started by this process on a loopback port, so the
+   * runtime may authorize traffic to it itself. That self-authorization is confined by the signer
+   * constraints, which the egress proxy enforces per request: only the bundled logical origin and
+   * the loopback server, and only traffic that physically reaches a loopback address. It can never
+   * authorize a request to a third-party host.
+   */
+  private bundledStagingScope(manifest: CampaignYamlV5, loopbackUrl: string): {
+    signedManifest: SignedScopeManifest;
+    scopeSigners: ScopeSignerRegistry;
+  } {
+    if (!this.bundledStagingScopeKey) {
+      this.bundledStagingScopeKey = generateScopeKeyPair(BUNDLED_STAGING_SIGNER_KEY_ID);
+    }
+    const key = this.bundledStagingScopeKey;
+    const scopeSigners = scopeSignerRegistryOf([
+      {
+        keyId: key.keyId,
+        publicKeyPem: key.publicKeyPem,
+        principal: 'Nightfall bundled staging self-test (loopback only)',
+        allowedTargetOrigins: [BUNDLED_STAGING_LOGICAL_ORIGIN, loopbackUrl],
+        loopbackTransportOnly: true,
+      },
+    ]);
+    return {
+      signedManifest: signCampaignManifest(manifest, key.privateKeyPem, key.keyId),
+      scopeSigners,
+    };
+  }
+
+  /** Verifies an externally signed manifest against the operator-pinned registry, or throws. */
+  private requireOperatorAuthorization(
+    signedManifest: SignedScopeManifest,
+    entityId: string,
+  ): { principal: string } {
+    const result = verifyScopeAuthorization(signedManifest, this.operatorScopeSigners);
+    if (!result.authorized) {
+      this.auditLedger.append({
+        subsystem: 'policy-gate',
+        action: 'scope.authorization.rejected',
+        entityId,
+        actor: 'nightfall-policy-gate',
+        summary: `Rejected scope manifest (${signedManifest.canonicalDigestSha256.slice(0, 12)}): ${result.reason}.`,
+        metadata: { keyId: signedManifest.keyId },
+      });
+      throw new Error(`Scope not authorized: ${result.reason}`);
+    }
+    return { principal: result.signer.principal };
   }
 
   private syncApprovalsFromPolicyGate(emitUpdates = false): HitlApprovalRequest[] {
@@ -461,7 +528,7 @@ export class NightfallOrchestrator {
     // 3. Spin up real StagingTargetServer & execute live RedTeamEngine assessment through EgressPolicyProxy
     const liveStagingUrl = await this.ensureLiveStagingTargetUrl();
     const campaignId = 'camp-northstar-staging';
-    const logicalTargetUrl = 'https://staging.northstardocs.com';
+    const logicalTargetUrl = BUNDLED_STAGING_LOGICAL_ORIGIN;
 
     const campaignManifest: CampaignYamlV5 = {
       objective:
@@ -489,11 +556,9 @@ export class NightfallOrchestrator {
     };
 
     const yamlText = serializeCampaignYaml(campaignManifest);
-    const keyPair = generateScopeKeyPair(`key-${campaignId}`);
-    const signedManifest = signCampaignManifest(
+    const { signedManifest, scopeSigners } = this.bundledStagingScope(
       campaignManifest,
-      keyPair.privateKeyPem,
-      keyPair.keyId,
+      liveStagingUrl,
     );
 
     this.auditLedger.append({
@@ -503,7 +568,8 @@ export class NightfallOrchestrator {
       actor: 'nightfall-policy-gate',
       summary: `Signed v5 campaign.yaml manifest (${signedManifest.canonicalDigestSha256.slice(0, 12)}) for ${logicalTargetUrl}.`,
       metadata: {
-        keyId: keyPair.keyId,
+        keyId: signedManifest.keyId,
+        loopbackOnly: true,
         maxRps: campaignManifest.campaign.max_requests_per_second,
       },
     });
@@ -517,7 +583,7 @@ export class NightfallOrchestrator {
         [logicalTargetUrl]: liveStagingUrl,
       },
       signedManifest,
-      publicKeyPem: keyPair.publicKeyPem,
+      scopeSigners,
       askForApproval: true,
       includeMutatingProbe: true,
       modelId: 'gpt-6-cyber-ultra',
@@ -1298,6 +1364,8 @@ export class NightfallOrchestrator {
     fixId: string,
     verifyOptions?: {
       targetBaseUrl?: string;
+      /** Required with targetBaseUrl: an operator-signed scope covering that target. */
+      signedManifest?: SignedScopeManifest;
       aliceToken?: string;
       bobToken?: string;
     },
@@ -1315,6 +1383,14 @@ export class NightfallOrchestrator {
     }
     if (currentFix.status === 'suppressed') {
       throw new Error(`Cannot merge suppressed FixProposal ${fixId}`);
+    }
+    if (verifyOptions?.targetBaseUrl) {
+      if (!verifyOptions.signedManifest) {
+        throw new Error(
+          `Scope not authorized: re-verifying against ${verifyOptions.targetBaseUrl} requires a manifest signed by a pinned operator key.`,
+        );
+      }
+      this.requireOperatorAuthorization(verifyOptions.signedManifest, fixId);
     }
 
     const nowIso = new Date().toISOString();
@@ -1342,6 +1418,35 @@ export class NightfallOrchestrator {
         this.ephemeralStagingServer.server.applyWebSocketAclPatch();
         liveVerifyUrl = this.ephemeralStagingServer.baseUrl;
       }
+    }
+
+    let scopeAuthorization:
+      | { signedManifest: SignedScopeManifest; scopeSigners: ScopeSignerRegistry }
+      | undefined;
+    if (liveVerifyUrl && verifyOptions?.signedManifest) {
+      scopeAuthorization = {
+        signedManifest: verifyOptions.signedManifest,
+        scopeSigners: this.operatorScopeSigners,
+      };
+    } else if (liveVerifyUrl) {
+      scopeAuthorization = this.bundledStagingScope(
+        {
+          objective: `Targeted post-patch re-verification for ${mergedFix.id}`,
+          campaign: {
+            name: `reverify-${mergedFix.id.toLowerCase()}`,
+            targets: [liveVerifyUrl],
+            source: { repository: mergedFix.repository },
+            max_duration: '10m',
+            max_requests_per_second: 50,
+          },
+          credentials: {},
+          http: { allow: [{ methods: ['GET', 'POST'], path_prefixes: ['/'] }] },
+          websocket: {
+            allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
+          },
+        },
+        liveVerifyUrl,
+      );
     }
 
     let primaryUpdatedFinding: FindingRecord | undefined;
@@ -1465,6 +1570,7 @@ export class NightfallOrchestrator {
           finding: verifyingFinding,
           fix: mergedFix,
           targetBaseUrl: liveVerifyUrl,
+          scopeAuthorization,
           aliceToken: verifyOptions?.aliceToken,
           bobToken: verifyOptions?.bobToken,
         });
@@ -1555,17 +1661,69 @@ export class NightfallOrchestrator {
     return { campaign };
   }
 
+  /**
+   * Launches a campaign. Real traffic requires `signedManifest`: a scope signed outside this process
+   * by a key pinned in the operator signer registry (`nightfall keygen` / `nightfall sign`). The only
+   * exception is the bundled northstar staging target, which this process runs on loopback itself.
+   */
   async launchCampaign(
     campaignId: string,
     yamlText?: string,
+    externalSignedManifest?: SignedScopeManifest,
   ): Promise<{ campaign: RedTeamCampaignRun }> {
     const current = this.store.getCampaign(campaignId);
     if (!current) {
       throw new Error(`Campaign not found: ${campaignId}`);
     }
 
-    const effectiveYaml = yamlText?.trim() ? yamlText : current.yamlText;
-    const parsedManifest = parseCampaignYaml(effectiveYaml);
+    let parsedManifest: CampaignYamlV5;
+    let effectiveYaml: string;
+    let signedManifest: SignedScopeManifest | undefined;
+    let scopeSigners: ScopeSignerRegistry | undefined;
+    let authorizedBy: string;
+    if (externalSignedManifest) {
+      ({ principal: authorizedBy } = this.requireOperatorAuthorization(
+        externalSignedManifest,
+        campaignId,
+      ));
+      if (yamlText?.trim()) {
+        const draftDigest = serializeCampaignYaml(parseCampaignYaml(yamlText));
+        if (draftDigest !== serializeCampaignYaml(externalSignedManifest.manifest)) {
+          throw new Error(
+            'Scope not authorized: the edited campaign.yaml differs from the signed manifest. Re-sign it.',
+          );
+        }
+      }
+      signedManifest = externalSignedManifest;
+      parsedManifest = externalSignedManifest.manifest;
+      effectiveYaml = serializeCampaignYaml(parsedManifest);
+      scopeSigners = this.operatorScopeSigners;
+    } else {
+      effectiveYaml = yamlText?.trim() ? yamlText : current.yamlText;
+      parsedManifest = parseCampaignYaml(effectiveYaml);
+      const outside = parsedManifest.campaign.targets.filter((t) => !isNorthstarStagingHost(t));
+      if (outside.length > 0) {
+        this.auditLedger.append({
+          subsystem: 'policy-gate',
+          action: 'scope.authorization.rejected',
+          entityId: campaignId,
+          actor: 'nightfall-policy-gate',
+          summary: `Refused unsigned launch against ${outside.join(', ')}.`,
+          metadata: { targets: outside.join(',') },
+        });
+        throw new Error(
+          `Scope not authorized: launching against ${outside.join(', ')} requires a campaign manifest signed by a pinned operator key (configure NIGHTFALL_SCOPE_SIGNERS and sign with "nightfall sign").`,
+        );
+      }
+      authorizedBy = 'bundled-staging-loopback';
+      ({ signedManifest, scopeSigners } = this.bundledStagingScope(
+        parsedManifest,
+        await this.ensureLiveStagingTargetUrl(),
+      ));
+    }
+    if (!signedManifest || !scopeSigners) {
+      throw new Error('Scope not authorized: no signed scope manifest for this launch.');
+    }
 
     if (this.policyGate.isKillSwitchEngaged()) {
       const halted = RedTeamCampaignRunSchema.parse({
@@ -1582,12 +1740,6 @@ export class NightfallOrchestrator {
     }
 
     const primaryTarget = parsedManifest.campaign.targets[0] ?? current.targetUrl;
-    const keyPair = generateScopeKeyPair(`key-${campaignId}`);
-    const signedManifest = signCampaignManifest(
-      parsedManifest,
-      keyPair.privateKeyPem,
-      keyPair.keyId,
-    );
 
     const runningState = RedTeamCampaignRunSchema.parse({
       ...current,
@@ -1611,6 +1763,8 @@ export class NightfallOrchestrator {
       summary: `Launched live Red Team campaign "${runningState.name}" against ${runningState.targetUrl}.`,
       metadata: {
         maxRps: parsedManifest.campaign.max_requests_per_second,
+        authorizedBy,
+        keyId: signedManifest.keyId,
         manifestSha256: signedManifest.canonicalDigestSha256,
       },
     });
@@ -1630,7 +1784,7 @@ export class NightfallOrchestrator {
       targetBaseUrl: primaryTarget,
       targetTransportRedirects,
       signedManifest,
-      publicKeyPem: keyPair.publicKeyPem,
+      scopeSigners,
       askForApproval: runningState.askForApproval,
       includeMutatingProbe: runningState.askForApproval,
       modelId: runningState.modelId,

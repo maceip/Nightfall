@@ -3,10 +3,8 @@ import {
   EvidenceBundleSchema,
   FindingRecordSchema,
   RedTeamCampaignRunSchema,
-  generateScopeKeyPair,
   parseCampaignYaml,
   serializeCampaignYaml,
-  signCampaignManifest,
   type CampaignActivityPoint,
   type CampaignYamlV5,
   type EndpointHitRecord,
@@ -16,6 +14,7 @@ import {
   type FixVerificationStatus,
   type HitlApprovalRequest,
   type RedTeamCampaignRun,
+  type ScopeSignerRegistry,
   type SharedKnowledgeNode,
   type SignedScopeManifest,
   type WorkQueueItem,
@@ -76,8 +75,10 @@ export interface RunAssessmentInput {
   askForApproval?: boolean;
   modelId?: string;
   observedRevision?: string;
-  signedManifest?: SignedScopeManifest;
-  publicKeyPem?: string;
+  /** Operator-signed scope. Required: the engine never authorizes its own traffic. */
+  signedManifest: SignedScopeManifest;
+  /** Pinned signer registry the manifest must verify against. */
+  scopeSigners: ScopeSignerRegistry;
   targetTransportRedirects?: Record<string, string>;
   includeMutatingProbe?: boolean;
   externalFindings?: ExternalStaticFindingInput[];
@@ -105,6 +106,12 @@ export interface VerifyFixClosureInput {
   bobToken?: string;
   aliceWorkspaceId?: string;
   bobWorkspaceId?: string;
+  /** Required whenever targetBaseUrl is set: live re-verification sends real traffic. */
+  scopeAuthorization?: {
+    signedManifest: SignedScopeManifest;
+    scopeSigners: ScopeSignerRegistry;
+    targetTransportRedirects?: Record<string, string>;
+  };
 }
 
 export interface VerifyFixClosureResult {
@@ -298,37 +305,16 @@ export class RedTeamEngine {
     const askForApproval = input.askForApproval ?? true;
     const observedRevision = input.observedRevision ?? 'e81a442';
 
-    let signedManifest = input.signedManifest;
-    let publicKeyPem = input.publicKeyPem;
-    if (!signedManifest || !publicKeyPem) {
-      const keyPair = generateScopeKeyPair(`key-${campaignId}`);
-      const manifest: CampaignYamlV5 = {
-        objective: 'Verify multi-tenant document and workspace access boundaries.',
-        campaign: {
-          name: `${campaignId}-scope`,
-          targets: [targetBaseUrl],
-          source: { archive: 'northstar-docs-source.tar.gz' },
-          max_duration: '30m',
-          max_requests_per_second: 50,
-        },
-        credentials: {
-          alice: { file: 'credentials/alice.token', workspaceHint: 'Workspace A' },
-          bob: { file: 'credentials/bob.token', workspaceHint: 'Workspace B' },
-        },
-        http: {
-          allow: [{ methods: ['GET', 'POST'], path_prefixes: ['/'] }],
-        },
-        websocket: {
-          allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
-        },
-      };
-      signedManifest = signCampaignManifest(manifest, keyPair.privateKeyPem, keyPair.keyId);
-      publicKeyPem = keyPair.publicKeyPem;
+    const { signedManifest, scopeSigners } = input;
+    if (!signedManifest || !scopeSigners) {
+      throw new Error(
+        'runAssessment requires an operator-signed scope manifest and the pinned scope signer registry.',
+      );
     }
 
     const proxy = new EgressPolicyProxy({
       signedManifest,
-      publicKeyPem,
+      scopeSigners,
       campaignId,
       askForApproval,
       policyGate: this.policyGate,
@@ -954,6 +940,11 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
   }
 
   async verifyFixClosure(input: VerifyFixClosureInput): Promise<VerifyFixClosureResult> {
+    if (input.targetBaseUrl && !input.scopeAuthorization) {
+      throw new Error(
+        'Live fix re-verification requires a signed scope authorization covering the target.',
+      );
+    }
     const sandbox = await this.sandboxRuntime.createSandbox({
       prefix: 'nf-fix-reverify',
       maxDurationMs: 15_000,
@@ -982,32 +973,11 @@ console.log('CLEAN_ROOM_EXPORT_CONFIRMED');
         const aliceWorkspaceId = input.aliceWorkspaceId ?? STAGING_ALICE_WORKSPACE_ID;
         const bobWorkspaceId = input.bobWorkspaceId ?? STAGING_BOB_WORKSPACE_ID;
 
-        const keyPair = generateScopeKeyPair(`reverify-${input.finding.id}`);
-        const manifest: CampaignYamlV5 = {
-          objective: `Targeted post-patch re-verification for ${input.finding.id}`,
-          campaign: {
-            name: `reverify-${input.finding.id.toLowerCase()}`,
-            targets: [targetBaseUrl],
-            source: { repository: input.finding.repository },
-            max_duration: '10m',
-            max_requests_per_second: 50,
-          },
-          credentials: {},
-          http: {
-            allow: [{ methods: ['GET', 'POST'], path_prefixes: ['/'] }],
-          },
-          websocket: {
-            allow: [{ paths: ['/ws/documents'], origins: ['*'], operations: ['open', 'send'] }],
-          },
-        };
-        const signedManifest = signCampaignManifest(
-          manifest,
-          keyPair.privateKeyPem,
-          keyPair.keyId,
-        );
+        const scopeAuthorization = input.scopeAuthorization!;
         const proxy = new EgressPolicyProxy({
-          signedManifest,
-          publicKeyPem: keyPair.publicKeyPem,
+          signedManifest: scopeAuthorization.signedManifest,
+          scopeSigners: scopeAuthorization.scopeSigners,
+          targetTransportRedirects: scopeAuthorization.targetTransportRedirects,
           campaignId: `reverify-${input.finding.id}`,
           askForApproval: false,
           policyGate: this.policyGate,

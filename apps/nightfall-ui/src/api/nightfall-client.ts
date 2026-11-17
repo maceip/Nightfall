@@ -234,13 +234,18 @@ export async function prepareCampaignApi(input: {
   });
 }
 
+/**
+ * Launches a campaign. Any target other than the bundled loopback staging server needs
+ * `signedManifest`: a scope signed with a pinned operator key (`nightfall sign`).
+ */
 export async function launchCampaignApi(
   campaignId: string,
   yamlText: string,
+  signedManifest?: unknown,
 ): Promise<{ campaign: RedTeamCampaignRun }> {
   return requestJson(`/red-team/campaigns/${encodeURIComponent(campaignId)}/launch`, {
     method: 'POST',
-    body: JSON.stringify({ yamlText }),
+    body: JSON.stringify(signedManifest ? { yamlText, signedManifest } : { yamlText }),
   });
 }
 
