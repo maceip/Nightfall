@@ -104,6 +104,9 @@ jobs:
       - name: Build renderer & zcode-aligned Electron main/preload bundles
         run: pnpm --filter @nightfall/nightfall-ui run build:desktop
 
+      - name: Audit Facebook Astryx design system bundle
+        run: pnpm --filter @nightfall/nightfall-ui run astryx:doctor
+
   build-macos-dmg:
     name: Build Debug macOS DMG (${{ matrix.arch }})
     needs: verify

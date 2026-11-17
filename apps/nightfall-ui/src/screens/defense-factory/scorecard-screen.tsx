@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from 'react';
+import { HStack } from '@astryxdesign/core/HStack';
+import { VStack } from '@astryxdesign/core/VStack';
 import type {
   FindingRecord,
   RepositoryRecord,
@@ -8,11 +10,10 @@ import type {
 } from '@nightfall/core-contracts';
 import {
   Button,
-  Card,
+  ConnectedKpiStrip,
   DataTable,
   type DataTableColumn,
   Input,
-  KpiCard,
   ScorecardPostureMeter,
   ScorecardScorePill,
   SearchIcon,
@@ -34,6 +35,13 @@ export type ScorecardScreenProps = {
   onRunScorecardScan: (req: ScorecardScanRequest) => Promise<ScorecardReportRecord | null>;
   onFixFinding: (finding: FindingRecord) => void;
 };
+
+function mapCheckStatus(status: ScorecardCheckResult['status']): string {
+  if (status === 'pass') return 'verified';
+  if (status === 'fail') return 'critical';
+  if (status === 'warn') return 'verifying';
+  return 'not_recorded';
+}
 
 export function ScorecardScreen({
   reports,
@@ -60,7 +68,9 @@ export function ScorecardScreen({
   }, [reports, selectedRepo]);
 
   const activeRepoName =
-    selectedRepo !== 'all' ? selectedRepo : (activeReport?.repository ?? repositories[0]?.name ?? 'northstar-docs');
+    selectedRepo !== 'all'
+      ? selectedRepo
+      : (reports[0]?.repository ?? repositories[0]?.name ?? 'northstar-docs');
 
   const linkedFindingsByCheck = useMemo(() => {
     const map = new Map<string, FindingRecord>();
@@ -68,7 +78,10 @@ export function ScorecardScreen({
       if (!f.sources.includes('scorecard')) continue;
       if (activeReport && f.repository !== activeReport.repository) continue;
       for (const check of activeReport?.checks ?? []) {
-        if (f.subtitle.includes(check.name) || f.rootCauseClusterKey.includes(check.name.toLowerCase())) {
+        if (
+          f.subtitle.includes(check.name) ||
+          f.rootCauseClusterKey.includes(check.name.toLowerCase())
+        ) {
           map.set(check.name, f);
         }
       }
@@ -83,7 +96,11 @@ export function ScorecardScreen({
       if (statusFilter === 'pass' && c.status !== 'pass') return false;
       if (search.trim()) {
         const q = search.toLowerCase();
-        return c.name.toLowerCase().includes(q) || c.reason.toLowerCase().includes(q) || c.short.toLowerCase().includes(q);
+        return (
+          c.name.toLowerCase().includes(q) ||
+          c.reason.toLowerCase().includes(q) ||
+          c.short.toLowerCase().includes(q)
+        );
       }
       return true;
     });
@@ -100,8 +117,8 @@ export function ScorecardScreen({
       header: 'Check',
       cell: (c) => (
         <div>
-          <div className="font-medium text-ink">{c.name}</div>
-          <div className="mt-0.5 text-xs text-primary-500">{c.short || c.reason}</div>
+          <div className="font-semibold text-ink">{c.name}</div>
+          <div className="mt-0.5 text-xs text-ink-muted">{c.short || c.reason}</div>
         </div>
       ),
     },
@@ -121,26 +138,21 @@ export function ScorecardScreen({
       key: 'status',
       header: 'Status',
       className: 'w-28',
-      cell: (c) => (
-        <StatusBadge
-          status={c.status === 'pass' ? 'verified' : c.status === 'fail' ? 'critical' : c.status === 'warn' ? 'verifying' : 'not_recorded'}
-          label={c.status}
-        />
-      ),
+      cell: (c) => <StatusBadge status={mapCheckStatus(c.status)} label={c.status} />,
     },
     {
       key: 'reason',
       header: 'Telemetry Reason',
-      cell: (c) => <span className="text-xs text-primary-700">{c.reason}</span>,
+      cell: (c) => <span className="text-xs text-ink-secondary">{c.reason}</span>,
     },
     {
       key: 'actions',
-      header: '',
+      header: 'Actions',
       className: 'w-44 text-right whitespace-nowrap',
       cell: (c) => {
         const linked = linkedFindingsByCheck.get(c.name);
         return (
-          <div className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <span className="inline-flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
             <Button
               id={`btn-inspect-check-${c.name}`}
               variant="outline"
@@ -150,15 +162,11 @@ export function ScorecardScreen({
               Inspect
             </Button>
             {linked ? (
-              <Button
-                id={`btn-fix-check-${c.name}`}
-                size="sm"
-                onClick={() => onFixFinding(linked)}
-              >
+              <Button id={`btn-fix-check-${c.name}`} size="sm" onClick={() => onFixFinding(linked)}>
                 {linked.fixId ? 'View Fix' : 'Fix'}
               </Button>
             ) : null}
-          </div>
+          </span>
         );
       },
     },
@@ -167,39 +175,45 @@ export function ScorecardScreen({
   async function handleRunScan(): Promise<void> {
     setScanning(true);
     try {
-      const repoRec = repositories.find((r) => r.name === activeRepoName);
+      const targetRepo =
+        selectedRepo !== 'all'
+          ? selectedRepo
+          : (reports[0]?.repository ?? repositories[0]?.name ?? 'northstar-docs');
+      const repoRec = repositories.find((r) => r.name === targetRepo);
       const req: ScorecardScanRequest =
         targetType === 'local'
           ? {
               targetType: 'local',
-              repository: activeRepoName,
+              repository: targetRepo,
               ...(repoRec?.localPath ? { localPath: repoRec.localPath } : {}),
               promoteFindings: true,
               includeGovernanceChecks: false,
             }
           : {
               targetType: 'remote',
-              repository: remoteTarget.replace(/^https?:\/\/github\.com\//, '').split('/').slice(-1)[0] || remoteTarget,
+              repository:
+                remoteTarget.replace(/^https?:\/\/github\.com\//, '').split('/').slice(-1)[0] ||
+                remoteTarget,
               remoteRepo: remoteTarget.trim(),
               promoteFindings: true,
               includeGovernanceChecks: true,
             };
       const next = await onRunScorecardScan(req);
-      if (next) {
-        onSelectRepo(next.repository);
-      }
+      if (next) onSelectRepo(next.repository);
     } finally {
       setScanning(false);
     }
   }
 
   return (
-    <div id="view-scorecard" className="space-y-4 tabular-nums">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <KpiCard label="Evaluated repositories" value={reports.length} suffix={`/ ${repositories.length}`} />
-        <KpiCard label="Passing checks" value={activeReport?.riskSummary.passingChecks ?? 0} />
-        <KpiCard label="Open Scorecard findings" value={promotedCount} />
-      </div>
+    <VStack id="view-scorecard" gap={4} className="tabular-nums">
+      <ConnectedKpiStrip
+        cells={[
+          { key: 'repos', label: 'Evaluated repositories', value: reports.length, suffix: `/ ${repositories.length}` },
+          { key: 'passing', label: 'Passing checks', value: activeReport?.riskSummary.passingChecks ?? 0 },
+          { key: 'open', label: 'Open Scorecard findings', value: promotedCount },
+        ]}
+      />
 
       {activeReport ? (
         <ScorecardPostureMeter
@@ -212,8 +226,8 @@ export function ScorecardScreen({
         />
       ) : null}
 
-      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-hairline bg-canvas p-4">
+        <HStack gap={2} align="center" wrap="wrap">
           <SegmentedControl
             value={targetType}
             onChange={setTargetType}
@@ -227,7 +241,8 @@ export function ScorecardScreen({
               id="select-scorecard-repo"
               value={activeRepoName}
               onChange={(e) => onSelectRepo(e.target.value)}
-              className="h-8 rounded-lg border border-primary-200 bg-surface px-3 text-xs font-medium text-ink outline-none"
+              aria-label="Select Scorecard repository"
+              className="h-9 rounded-full border border-hairline-strong bg-canvas px-3.5 text-xs font-medium text-ink outline-none"
             >
               {repositories.map((r) => (
                 <option key={r.id} value={r.name}>{r.name}</option>
@@ -239,31 +254,33 @@ export function ScorecardScreen({
               value={remoteTarget}
               onChange={(e) => setRemoteTarget(e.target.value)}
               placeholder="github.com/owner/repo"
-              className="w-64"
+              className="w-64 border-hairline-strong bg-canvas"
             />
           )}
-        </div>
+        </HStack>
+
         <Button id="btn-run-scorecard-scan" disabled={scanning} onClick={() => void handleRunScan()}>
           {scanning ? 'Evaluating Posture…' : 'Run Scorecard Scan'}
         </Button>
-      </Card>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2.5">
         <div className="relative min-w-[220px] flex-1">
-          <SearchIcon size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-primary-500" />
+          <SearchIcon size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" />
           <Input
             id="input-search-scorecard-checks"
             placeholder="Filter Scorecard checks"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
+            className="rounded-full border-hairline-strong bg-canvas pl-9"
           />
         </div>
         <select
           id="select-scorecard-status-filter"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as 'all' | 'actionable' | 'pass')}
-          className="h-8 rounded-lg border border-primary-200 bg-surface px-3 text-xs font-medium text-ink outline-none"
+          aria-label="Filter Scorecard checks by status"
+          className="h-9 rounded-full border border-hairline-strong bg-canvas px-3.5 text-xs font-medium text-ink outline-none"
         >
           <option value="all">All checks</option>
           <option value="actionable">Failing &amp; warnings</option>
@@ -271,14 +288,16 @@ export function ScorecardScreen({
         </select>
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={filteredChecks}
-        rowKey={(c) => c.name}
-        rowId={(c) => `scorecard-check-row-${c.name}`}
-        onRowClick={setInspectedCheck}
-        ariaLabel="Scorecard security posture checks"
-      />
+      <div className="overflow-hidden rounded-2xl border border-hairline bg-canvas">
+        <DataTable
+          columns={columns}
+          rows={filteredChecks}
+          rowKey={(c) => c.name}
+          rowId={(c) => `scorecard-check-row-${c.name}`}
+          onRowClick={setInspectedCheck}
+          ariaLabel="Scorecard security posture checks"
+        />
+      </div>
 
       <ScorecardCheckDrawer
         check={inspectedCheck}
@@ -287,6 +306,6 @@ export function ScorecardScreen({
         onClose={() => setInspectedCheck(null)}
         onFixWithNightfall={onFixFinding}
       />
-    </div>
+    </VStack>
   );
 }

@@ -3,6 +3,7 @@ import React, { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  AstryxButton,
   BudgetSignalBars,
   Button,
   CampaignActivityTimeline,
@@ -10,6 +11,7 @@ import {
   Collapsible,
   CollapsiblePanel,
   CollapsibleTrigger,
+  ConnectedKpiStrip,
   DailyTrendChart,
   DataTable,
   DialogClose,
@@ -19,6 +21,7 @@ import {
   DrawerContent,
   Input,
   KpiCard,
+  LifecycleStepper,
   MetadataField,
   MetadataRail,
   NightfallHorizonIcon,
@@ -33,15 +36,21 @@ import {
   SearchIcon,
   SegmentedControl,
   SeverityBadge,
+  SeverityProportionalBars,
   ShieldAlertIcon,
   StatusBadge,
+  StatusDot,
   Switch,
   Tabs,
   TabsList,
   TabsPanel,
   TabsTab,
+  Theme,
+  Token,
   TooltipProvider,
   UnifiedDiffViewer,
+  YamlCodeViewer,
+  nightfallTheme,
 } from './index.js';
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -69,116 +78,141 @@ function InteractiveKitHarness(): React.ReactElement {
   const [mode, setMode] = useState<'cloud' | 'local'>('cloud');
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [promptVal, setPromptVal] = useState('Assess staging target');
+  const [yamlVal, setYamlVal] = useState('objective: Check access\ncampaign:\n  name: staging');
 
   return (
-    <TooltipProvider>
-      <div>
-        <SearchIcon size={16} aria-label="Search icon" />
-        <ShieldAlertIcon size={18} />
-        <NightfallHorizonIcon size={18} />
-        <RedTeamCampaignBadge size={24} />
+    <Theme theme={nightfallTheme} mode="light">
+      <TooltipProvider>
+        <div>
+          <SearchIcon size={16} aria-label="Search icon" />
+          <ShieldAlertIcon size={18} />
+          <NightfallHorizonIcon size={18} />
+          <RedTeamCampaignBadge size={24} />
 
-        <Button variant="default">Primary Action</Button>
-        <Button variant="destructive" data-engaged="true">
-          Kill-Switch
-        </Button>
-        <Input placeholder="Filter findings" />
-        <Switch defaultChecked aria-label="HITL switch" />
+          <Button variant="default">Primary Action</Button>
+          <AstryxButton variant="secondary" size="sm" label="Astryx Primitive" />
+          <StatusDot variant="success" label="Healthy" />
+          <Token label="Mantis Preview" />
+          <Button variant="destructive" data-engaged="true">
+            Kill-Switch
+          </Button>
+          <Input placeholder="Filter findings" />
+          <Switch defaultChecked aria-label="HITL switch" />
 
-        <SeverityBadge severity="critical" />
-        <StatusBadge status="in_progress" />
-        <StatusBadge status="verified" />
+          <SeverityBadge severity="critical" />
+          <StatusBadge status="in_progress" />
+          <StatusBadge status="verified" />
 
-        <KpiCard label="PR review coverage" value={14} suffix="/ 18" />
-        <SegmentedControl
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: 'cloud', label: 'Cloud' },
-            { value: 'local', label: 'Local' },
-          ]}
-        />
-
-        <Tabs defaultValue="overview">
-          <TabsList>
-            <TabsTab value="overview">Overview Tab</TabsTab>
-            <TabsTab value="findings">Findings Tab</TabsTab>
-          </TabsList>
-          <TabsPanel value="overview">Overview Content</TabsPanel>
-          <TabsPanel value="findings">Findings Content</TabsPanel>
-        </Tabs>
-
-        <Collapsible defaultOpen>
-          <CollapsibleTrigger>Gates Log</CollapsibleTrigger>
-          <CollapsiblePanel>Red-to-Green verified</CollapsiblePanel>
-        </Collapsible>
-
-        <SankeyDiagram
-          totalOpen={0}
-          severityCounts={{ critical: 0, high: 0, medium: 0, low: 0, informational: 0 }}
-          statusCounts={{ new: 0, triaged: 0, in_progress: 0 }}
-          links={[]}
-          selectedSeverity={selectedSev}
-          onSelectSeverity={setSelectedSev}
-        />
-
-        <DailyTrendChart data={[]} />
-        <CampaignActivityTimeline series={[]} />
-        <BudgetSignalBars pct={84} />
-        <ScorecardPostureIcon size={16} />
-        <ScorecardScorePill score={8.4} />
-        <ScorecardScorePill score={-1} />
-        <ScorecardScorePill score={Number.NaN} />
-        <ScorecardPostureMeter
-          repository="auth-gateway"
-          aggregateScore={-1}
-          riskSummary={{
-            criticalFailing: 1,
-            highFailing: 0,
-            mediumFailing: 0,
-            lowFailing: 0,
-            passingChecks: 3,
-            inconclusiveChecks: 1,
-          }}
-        />
-        <UnifiedDiffViewer
-          filePath="src/export.ts"
-          unifiedDiff={'--- a/src/export.ts\n+++ b/src/export.ts\n@@ -1,2 +1,2 @@\n-allowAll()\n+enforceWorkspaceAcl()'}
-        />
-
-        <Card>
-          <DataTable
-            columns={[{ key: 'id', header: 'ID', cell: (r: { id: string }) => r.id }]}
-            rows={[{ id: 'SEC-1034' }]}
-            rowKey={(r) => r.id}
+          <KpiCard label="PR review coverage" value={14} suffix="/ 18" />
+          <ConnectedKpiStrip
+            labelFirst={false}
+            cells={[
+              { key: 'new', label: 'New', value: 12 },
+              { key: 'triaged', label: 'Triaged', value: 18 },
+              { key: 'progress', label: 'In progress', value: 18 },
+              { key: 'fixed', label: 'Fixed in last 7d', value: 14 },
+            ]}
           />
-        </Card>
+          <SeverityProportionalBars
+            counts={{ critical: 1, high: 9, medium: 26, low: 12, informational: 0 }}
+          />
+          <LifecycleStepper
+            stages={['Discovered', 'Verified', 'Patch Synthesized', 'Gates Passed', 'Closed']}
+            activeIndex={2}
+          />
+          <SegmentedControl
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: 'cloud', label: 'Cloud' },
+              { value: 'local', label: 'Local' },
+            ]}
+          />
 
-        <MetadataRail ariaLabel="Test metadata">
-          <MetadataField label="STATUS">Confirmed</MetadataField>
-        </MetadataRail>
+          <Tabs defaultValue="overview">
+            <TabsList>
+              <TabsTab value="overview">Overview Tab</TabsTab>
+              <TabsTab value="findings">Findings Tab</TabsTab>
+            </TabsList>
+            <TabsPanel value="overview">Overview Content</TabsPanel>
+            <TabsPanel value="findings">Findings Content</TabsPanel>
+          </Tabs>
 
-        <PromptInput value={promptVal} onValueChange={setPromptVal} autoFocusGlobal>
-          <PromptInputTextarea aria-label="Prompt editor" />
-          <PromptInputActions>
-            <span>Actions ready</span>
-          </PromptInputActions>
-        </PromptInput>
+          <Collapsible defaultOpen>
+            <CollapsibleTrigger>Gates Log</CollapsibleTrigger>
+            <CollapsiblePanel>Red-to-Green verified</CollapsiblePanel>
+          </Collapsible>
 
-        <DialogRoot open={drawerOpen} onOpenChange={setDrawerOpen}>
-          <DrawerContent>
-            <DialogTitle>Fix with Nightfall</DialogTitle>
-            <DialogDescription>Hermetic patch verification</DialogDescription>
-            <DialogClose id="test-close-drawer">Close Drawer</DialogClose>
-          </DrawerContent>
-        </DialogRoot>
-      </div>
-    </TooltipProvider>
+          <SankeyDiagram
+            totalOpen={0}
+            severityCounts={{ critical: 0, high: 0, medium: 0, low: 0, informational: 0 }}
+            statusCounts={{ new: 0, triaged: 0, in_progress: 0 }}
+            links={[]}
+            selectedSeverity={selectedSev}
+            onSelectSeverity={setSelectedSev}
+          />
+
+          <DailyTrendChart data={[]} />
+          <CampaignActivityTimeline series={[]} />
+          <BudgetSignalBars pct={84} />
+          <ScorecardPostureIcon size={16} />
+          <ScorecardScorePill score={8.4} />
+          <ScorecardScorePill score={-1} />
+          <ScorecardScorePill score={Number.NaN} />
+          <ScorecardPostureMeter
+            repository="auth-gateway"
+            aggregateScore={-1}
+            riskSummary={{
+              criticalFailing: 1,
+              highFailing: 0,
+              mediumFailing: 0,
+              lowFailing: 0,
+              passingChecks: 3,
+              inconclusiveChecks: 1,
+            }}
+          />
+          <UnifiedDiffViewer
+            filePath="src/export.ts"
+            unifiedDiff={
+              '--- a/src/export.ts\n+++ b/src/export.ts\n@@ -1,2 +1,2 @@\n-allowAll()\n+enforceWorkspaceAcl()'
+            }
+          />
+          <YamlCodeViewer yamlText={yamlVal} onChange={setYamlVal} />
+
+          <Card>
+            <DataTable
+              columns={[{ key: 'id', header: 'ID', cell: (r: { id: string }) => r.id }]}
+              rows={[{ id: 'SEC-1034' }]}
+              rowKey={(r) => r.id}
+            />
+          </Card>
+
+          <MetadataRail ariaLabel="Test metadata">
+            <MetadataField label="STATUS">Confirmed</MetadataField>
+          </MetadataRail>
+
+          <PromptInput value={promptVal} onValueChange={setPromptVal} autoFocusGlobal>
+            <PromptInputTextarea aria-label="Prompt editor" />
+            <PromptInputActions>
+              <span>Actions ready</span>
+            </PromptInputActions>
+          </PromptInput>
+
+          <DialogRoot open={drawerOpen} onOpenChange={setDrawerOpen}>
+            <DrawerContent floating>
+              <DialogTitle>Fix with Nightfall</DialogTitle>
+              <DialogDescription>Hermetic patch verification</DialogDescription>
+              <DialogClose id="test-close-drawer">Close Drawer</DialogClose>
+            </DrawerContent>
+          </DialogRoot>
+        </div>
+      </TooltipProvider>
+    </Theme>
   );
 }
 
-describe('@nightfall/ui-kit webclaw design system', () => {
-  it('renders Base UI primitives, Hugeicons wrappers, prompt-kit, and zero-NaN visualizations cleanly', () => {
+describe('@nightfall/ui-kit Facebook Astryx design system', () => {
+  it('renders Astryx Theme + primitives, Hugeicons wrappers, YAML/diff/Sankey visualizations with zero NaN', () => {
     hostEl = document.createElement('div');
     document.body.appendChild(hostEl);
     root = createRoot(hostEl);
@@ -188,10 +222,13 @@ describe('@nightfall/ui-kit webclaw design system', () => {
     });
 
     expect(document.body.textContent).toContain('Primary Action');
+    expect(document.body.textContent).toContain('Astryx Primitive');
     expect(document.body.textContent).toContain('Critical');
     expect(document.body.textContent).toContain('In Progress');
     expect(document.body.textContent).toContain('Fix with Nightfall');
+    expect(document.body.textContent).toContain('Patch Synthesized');
     expect(document.body.textContent).toContain('84%');
+    expect(hostEl.querySelector('#textarea-campaign-yaml')).toBeTruthy();
     expect(hostEl.innerHTML).not.toContain('NaN');
 
     const critNode = hostEl.querySelector('#sankey-node-critical');

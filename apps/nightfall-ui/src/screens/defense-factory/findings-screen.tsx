@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from 'react';
+import { HStack } from '@astryxdesign/core/HStack';
+import { VStack } from '@astryxdesign/core/VStack';
 import type { FindingRecord, OverviewSummary, Severity } from '@nightfall/core-contracts';
 import {
   Button,
@@ -7,6 +9,7 @@ import {
   type DataTableColumn,
   FilterIcon,
   Input,
+  MoreHorizontalIcon,
   NightfallHorizonIcon,
   RedTeamSparkIcon,
   SankeyDiagram,
@@ -25,6 +28,41 @@ export type FindingsScreenProps = {
   onSelectFinding: (finding: FindingRecord) => void;
   onNavigateFixes: () => void;
 };
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const AVATAR_TONES = [
+  'bg-sky-100 text-sky-800',
+  'bg-violet-100 text-violet-800',
+  'bg-emerald-100 text-emerald-800',
+  'bg-amber-100 text-amber-800',
+  'bg-rose-100 text-rose-800',
+];
+
+function getAvatarTone(seed: string): string {
+  let sum = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    sum = (sum + seed.charCodeAt(i)) % AVATAR_TONES.length;
+  }
+  return AVATAR_TONES[sum] ?? AVATAR_TONES[0]!;
+}
+
+function formatDetectedShort(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!match) return 'Recent';
+  const monthIdx = Number.parseInt(match[2]!, 10) - 1;
+  const day = Number.parseInt(match[3]!, 10);
+  if (!Number.isFinite(monthIdx) || monthIdx < 0 || monthIdx > 11 || !Number.isFinite(day)) {
+    return 'Recent';
+  }
+  return `${MONTHS[monthIdx]} ${day}`;
+}
+
+function getFindingLocation(f: FindingRecord): string {
+  const ref = f.codeReferences[0];
+  if (ref) return `${ref.file}:${ref.startLine}`;
+  return f.affectedEndpoint ?? f.subtitle;
+}
 
 export function FindingsScreen({
   overview,
@@ -51,7 +89,8 @@ export function FindingsScreen({
         return (
           f.title.toLowerCase().includes(q) ||
           f.id.toLowerCase().includes(q) ||
-          f.repository.toLowerCase().includes(q)
+          f.repository.toLowerCase().includes(q) ||
+          f.subtitle.toLowerCase().includes(q)
         );
       }
       return true;
@@ -60,59 +99,29 @@ export function FindingsScreen({
 
   const columns: DataTableColumn<FindingRecord>[] = [
     {
-      key: 'select',
-      header: '',
-      className: 'w-9',
-      cell: (f) => (
-        <span onClick={(e) => e.stopPropagation()}>
-          <input
-            type="checkbox"
-            aria-label={`Select ${f.id}`}
-            className="size-3.5 rounded border-primary-300 accent-primary-900"
-          />
-        </span>
-      ),
-    },
-    {
       key: 'severity',
       header: 'Severity ↓',
       className: 'w-28',
       cell: (f) => <SeverityBadge severity={f.severity} />,
     },
     {
-      key: 'finding',
-      header: 'Finding',
+      key: 'title',
+      header: 'Title',
       cell: (f) => (
-        <div>
-          <div className="font-medium text-ink">{f.title}</div>
-          <div className="mt-0.5 text-xs text-primary-500">{f.subtitle}</div>
+        <div className="min-w-[220px]">
+          <div className="font-semibold text-ink">{f.title}</div>
+          <div className="mt-0.5 text-xs text-ink-muted">
+            <span className="font-mono">{f.id}</span> ·{' '}
+            <span className="font-mono">{getFindingLocation(f)}</span>
+          </div>
         </div>
       ),
     },
     {
-      key: 'owner',
-      header: 'Owner',
+      key: 'repository',
+      header: 'Repository',
       className: 'w-40',
-      cell: (f) => (
-        <span className="inline-flex items-center gap-2">
-          <span className="inline-flex size-5 items-center justify-center rounded-full bg-primary-800 text-[10px] font-semibold text-surface">
-            {f.owner.initials}
-          </span>
-          <span className="text-[13px] text-primary-800">{f.owner.name}</span>
-        </span>
-      ),
-    },
-    {
-      key: 'sources',
-      header: 'Sources',
-      className: 'w-24',
-      cell: (f) => (
-        <span className="inline-flex items-center gap-1.5 text-ink">
-          <NightfallHorizonIcon size={16} />
-          {f.sources.includes('red-team') ? <RedTeamSparkIcon size={14} /> : null}
-          {f.sources.includes('scorecard') ? <ScorecardPostureIcon size={15} /> : null}
-        </span>
-      ),
+      cell: (f) => <span className="font-mono text-[12.5px] text-ink-secondary">{f.repository}</span>,
     },
     {
       key: 'status',
@@ -120,28 +129,89 @@ export function FindingsScreen({
       className: 'w-32',
       cell: (f) => <StatusBadge status={f.status} />,
     },
+    {
+      key: 'owner',
+      header: 'Owner',
+      className: 'w-40',
+      cell: (f) => (
+        <span className="inline-flex items-center gap-2">
+          <span
+            className={`inline-flex size-6 items-center justify-center rounded-full text-[10.5px] font-semibold ${getAvatarTone(f.owner.name)}`}
+          >
+            {f.owner.initials}
+          </span>
+          <span className="text-[13px] text-ink">{f.owner.name}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'sources',
+      header: 'Sources',
+      className: 'w-24',
+      cell: (f) => {
+        const rawSources = f.sources as readonly string[];
+        const hasRedTeam =
+          rawSources.includes('red-team') || rawSources.includes('nightfall_red_team');
+        const hasScorecard =
+          rawSources.includes('scorecard') || rawSources.includes('nightfall_scorecard');
+        return (
+          <span className="inline-flex items-center -space-x-1.5">
+            <span
+              title="Nightfall Defense Factory"
+              className="inline-flex size-6 items-center justify-center rounded-full bg-pill text-ink ring-2 ring-canvas"
+            >
+              <NightfallHorizonIcon size={13} />
+            </span>
+            {hasRedTeam ? (
+              <span
+                title="Nightfall Red Team"
+                className="inline-flex size-6 items-center justify-center rounded-full bg-sky-100 text-accent-blue ring-2 ring-canvas"
+              >
+                <RedTeamSparkIcon size={12} />
+              </span>
+            ) : null}
+            {hasScorecard ? (
+              <span
+                title="Nightfall Scorecard"
+                className="inline-flex size-6 items-center justify-center rounded-full bg-status-mint text-status-mint-ink ring-2 ring-canvas"
+              >
+                <ScorecardPostureIcon size={12} />
+              </span>
+            ) : null}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'detected',
+      header: 'Detected',
+      className: 'w-24 text-right whitespace-nowrap',
+      cell: (f) => <span className="text-xs text-ink-muted">{formatDetectedShort(f.createdAt)}</span>,
+    },
   ];
 
   return (
-    <div id="view-findings" className="space-y-4 tabular-nums">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
-        <div className="flex items-center gap-2.5 text-[13.5px] text-ink">
-          <CodeIcon size={16} className="text-primary-600" />
+    <VStack id="view-findings" gap={4} className="tabular-nums">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-hairline bg-canvas px-4 py-3">
+        <HStack gap={2} align="center" className="text-[13.5px] text-ink">
+          <CodeIcon size={16} className="text-ink-secondary" />
           <span>
-            Review <span className="font-semibold">{overview.proposedFixesCount} proposed fixes</span>{' '}
-            to help reduce vulnerabilities in your code.
+            Fix proposals ready for review
+            {overview.proposedFixesCount > 0
+              ? ` · ${overview.proposedFixesCount} verified ${overview.proposedFixesCount === 1 ? 'patch' : 'patches'} queued`
+              : ''}
           </span>
-        </div>
-        <Button id="btn-banner-view-fixes" size="sm" onClick={onNavigateFixes}>
+        </HStack>
+        <Button id="btn-banner-view-fixes" variant="default" size="sm" onClick={onNavigateFixes}>
           View fixes
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="relative min-w-[240px] flex-1">
           <SearchIcon
             size={15}
-            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-primary-500"
+            className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted"
           />
           <Input
             id="input-search-findings"
@@ -149,32 +219,45 @@ export function FindingsScreen({
             placeholder="Search findings"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
+            className="rounded-full border-hairline-strong bg-canvas pl-9"
           />
         </div>
 
-        <select
-          id="select-findings-status"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as 'open' | 'all' | 'fixed')}
-          className="h-8 rounded-lg border border-primary-200 bg-surface px-3 text-[13px] font-medium text-ink outline-none focus:border-primary-400"
-        >
-          <option value="open">Open findings</option>
-          <option value="all">All findings</option>
-          <option value="fixed">Fixed findings</option>
-        </select>
+        <HStack gap={2} align="center" wrap="wrap">
+          <select
+            id="select-findings-status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as 'open' | 'all' | 'fixed')}
+            aria-label="Filter findings by status"
+            className="h-9 rounded-full border border-hairline-strong bg-canvas px-3.5 text-[13px] font-medium text-ink outline-none"
+          >
+            <option value="open">Open findings</option>
+            <option value="all">All findings</option>
+            <option value="fixed">Fixed</option>
+          </select>
 
-        <Button
-          id="btn-findings-clear-filters"
-          variant="outline"
-          onClick={() => {
-            setSearch('');
-            onSelectSeverity(null);
-          }}
-        >
-          <FilterIcon size={14} />
-          <span>Filters</span>
-        </Button>
+          <Button
+            id="btn-findings-clear-filters"
+            variant="outline"
+            onClick={() => {
+              setSearch('');
+              setStatusFilter('open');
+              onSelectSeverity(null);
+            }}
+          >
+            <FilterIcon size={14} />
+            <span>Filters</span>
+          </Button>
+
+          <Button
+            id="btn-findings-more"
+            variant="outline"
+            size="icon"
+            aria-label="More findings options"
+          >
+            <MoreHorizontalIcon size={15} />
+          </Button>
+        </HStack>
       </div>
 
       <SankeyDiagram
@@ -198,6 +281,6 @@ export function FindingsScreen({
         onRowClick={onSelectFinding}
         ariaLabel="Security findings list"
       />
-    </div>
+    </VStack>
   );
 }

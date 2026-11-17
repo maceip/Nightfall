@@ -144,5 +144,57 @@ describe('@nightfall/core-contracts campaign.yaml v5 & signing', () => {
     const ev = StreamEventSchema.parse({ type: 'scorecard.updated', report });
     expect(ev.type).toBe('scorecard.updated');
   });
+
+  it('models the 20-node maceip/mantis reference pipeline and exports workflow.local.json + CLI', async () => {
+    const {
+      MANTIS_REFERENCE_PIPELINE_STAGES,
+      MANTIS_UPSTREAM_REPO,
+      buildMantisCliCommand,
+      buildMantisWorkflowLocalJson,
+    } = await import('./index.js');
+
+    expect(MANTIS_UPSTREAM_REPO).toBe('https://github.com/maceip/mantis');
+    expect(MANTIS_REFERENCE_PIPELINE_STAGES).toHaveLength(20);
+    expect(MANTIS_REFERENCE_PIPELINE_STAGES.find((s) => s.id === 'planner')?.nightfallSeam).toBe(
+      'sast-seed-jsonl',
+    );
+    expect(MANTIS_REFERENCE_PIPELINE_STAGES.find((s) => s.id === 'patcher')?.nightfallSeam).toBe(
+      'defense-factory-verified-patch',
+    );
+
+    const jsonText = buildMantisWorkflowLocalJson({
+      repository: 'northstar-docs',
+      localPath: '/workspace/northstar-docs',
+      tier: 'tier-4-live-handoff',
+      scanMode: 'shadow-worktree-patch',
+      defaultModel: 'vertex_ai/gemini-3.8-flash',
+      seedSastJsonl: true,
+    });
+    const parsed = JSON.parse(jsonText) as {
+      nightfall_bridge: {
+        integration_state: string;
+        numeric_depth: number;
+        handoff_targets: { red_team_live_staging: boolean; defense_factory_patch_queue: boolean };
+      };
+    };
+    expect(parsed.nightfall_bridge.integration_state).toBe('preview-pipeline');
+    expect(parsed.nightfall_bridge.numeric_depth).toBe(85);
+    expect(parsed.nightfall_bridge.handoff_targets.red_team_live_staging).toBe(true);
+    expect(parsed.nightfall_bridge.handoff_targets.defense_factory_patch_queue).toBe(true);
+
+    const cmd = buildMantisCliCommand({
+      repository: 'northstar-docs',
+      localPath: '/workspace/northstar-docs',
+      tier: 'tier-1-fast',
+      scanMode: 'static-only',
+      defaultModel: 'vertex_ai/gemini-3.8-flash',
+      seedSastJsonl: true,
+    });
+    expect(cmd).toContain('./reference/run.sh');
+    expect(cmd).toContain('--depth 15');
+    expect(cmd).toContain('--static-only');
+    expect(cmd).toContain('--seed .nightfall/sast_findings.jsonl');
+  });
 });
+
 

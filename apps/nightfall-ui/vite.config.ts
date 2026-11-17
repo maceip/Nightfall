@@ -68,9 +68,21 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules/@hugeicons')) return 'vendor-icons';
-            if (id.includes('node_modules/@base-ui')) return 'vendor-base-ui';
-            if (id.includes('node_modules/react')) return 'vendor-react';
+            if (id.includes('node_modules')) {
+              if (id.includes('@astryxdesign/') || id.includes('@stylexjs/')) {
+                return 'ui-astryx';
+              }
+              if (id.includes('lucide-react') || id.includes('@hugeicons')) {
+                return 'vendor-icons';
+              }
+              if (
+                id.includes('@base-ui') ||
+                id.includes('react-dom') ||
+                id.includes('/react/')
+              ) {
+                return 'vendor-react';
+              }
+            }
             return undefined;
           },
         },

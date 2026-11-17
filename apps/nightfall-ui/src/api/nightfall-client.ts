@@ -111,13 +111,23 @@ export async function fetchBootstrapState(): Promise<NightfallBootstrapPayload> 
   };
 }
 
-export function subscribeLiveEvents(onEvent: (ev: StreamEvent) => void): () => void {
+export function subscribeLiveEvents(
+  onEvent: (ev: StreamEvent) => void,
+  onConnectionChange?: (connected: boolean) => void,
+): () => void {
   if (typeof EventSource === 'undefined') {
     return () => {};
   }
   try {
     const es = new EventSource(`${activeApiBaseUrl}/events`);
+    es.onopen = () => {
+      onConnectionChange?.(true);
+    };
+    es.onerror = () => {
+      onConnectionChange?.(false);
+    };
     es.onmessage = (msg) => {
+      onConnectionChange?.(true);
       try {
         const parsed = JSON.parse(msg.data) as StreamEvent;
         onEvent(parsed);

@@ -2,9 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   FindingRecord,
   NewScanRequest,
+  RedTeamCampaignRun,
   ScorecardReportRecord,
   ScorecardScanRequest,
-  StreamEvent,
 } from '@nightfall/core-contracts';
 import {
   fetchBootstrapState,
@@ -22,97 +22,7 @@ import {
   toggleRepositoryCoverageApi,
   triggerNewScanApi,
 } from '../api/nightfall-client.js';
-
-function upsertScorecardReportList(
-  list: ScorecardReportRecord[],
-  report: ScorecardReportRecord,
-): ScorecardReportRecord[] {
-  const exists = list.some(
-    (r) => r.id === report.id || r.repository === report.repository,
-  );
-  return exists
-    ? list.map((r) =>
-        r.id === report.id || r.repository === report.repository ? report : r,
-      )
-    : [report, ...list];
-}
-
-function applyStreamEvent(
-  prev: NightfallBootstrapPayload,
-  ev: StreamEvent,
-): NightfallBootstrapPayload {
-  if (ev.type === 'campaign.updated') {
-    const exists = prev.campaigns.some((c) => c.id === ev.campaign.id);
-    return {
-      ...prev,
-      campaigns: exists
-        ? prev.campaigns.map((c) => (c.id === ev.campaign.id ? ev.campaign : c))
-        : [ev.campaign, ...prev.campaigns],
-    };
-  }
-  if (ev.type === 'finding.updated') {
-    const exists = prev.findings.some((f) => f.id === ev.finding.id);
-    return {
-      ...prev,
-      findings: exists
-        ? prev.findings.map((f) => (f.id === ev.finding.id ? ev.finding : f))
-        : [ev.finding, ...prev.findings],
-    };
-  }
-  if (ev.type === 'evidence.recorded') {
-    return {
-      ...prev,
-      evidenceBundles: [
-        ev.evidence,
-        ...prev.evidenceBundles.filter((e) => e.id !== ev.evidence.id),
-      ],
-    };
-  }
-  if (ev.type === 'fix.updated') {
-    const exists = prev.fixes.some((fx) => fx.id === ev.fix.id);
-    return {
-      ...prev,
-      fixes: exists
-        ? prev.fixes.map((fx) => (fx.id === ev.fix.id ? ev.fix : fx))
-        : [ev.fix, ...prev.fixes],
-    };
-  }
-  if (ev.type === 'scan.updated') {
-    return { ...prev, scans: [ev.scan, ...prev.scans.filter((s) => s.id !== ev.scan.id)] };
-  }
-  if (ev.type === 'scorecard.updated') {
-    const scoredCount = ev.report.checks.filter((c) => c.score >= 0).length;
-    return {
-      ...prev,
-      scorecardReports: upsertScorecardReportList(prev.scorecardReports, ev.report),
-      repositories: prev.repositories.map((repo) =>
-        repo.name === ev.report.repository || repo.fullName === ev.report.repository
-          ? {
-              ...repo,
-              scorecardScore:
-                ev.report.aggregateScore >= 0 ? ev.report.aggregateScore : null,
-              scorecardPassingChecks: ev.report.riskSummary.passingChecks,
-              scorecardTotalChecks: scoredCount,
-              scorecardEvaluatedAt: ev.report.evaluatedAt,
-            }
-          : repo,
-      ),
-    };
-  }
-  if (ev.type === 'hitl.updated') {
-    return {
-      ...prev,
-      approvals: prev.approvals.map((a) => (a.id === ev.approval.id ? ev.approval : a)),
-    };
-  }
-  if (ev.type === 'safety.kill_switch') {
-    return { ...prev, killSwitchEngaged: ev.engaged };
-  }
-  if (ev.type === 'audit.appended') {
-    return { ...prev, auditEntries: [ev.entry, ...prev.auditEntries] };
-  }
-  return prev;
-}
+import { applyWorkspaceStreamEvent, upsertScorecardReportList } from './workspace-selectors.js';
 
 export function useNightfallWorkspace() {
   const [data, setData] = useState<NightfallBootstrapPayload | null>(null);
@@ -140,9 +50,15 @@ export function useNightfallWorkspace() {
 
   useEffect(() => {
     void loadBootstrap();
-    const unsub = subscribeLiveEvents((ev) => {
-      setData((prev) => (prev ? applyStreamEvent(prev, ev) : prev));
-    });
+    const unsub = subscribeLiveEvents(
+      (ev) => setData((prev) => (prev ? applyWorkspaceStreamEvent(prev, ev) : prev)),
+      (connected) =>
+        setData((prev) =>
+          prev && prev.connectedLiveApi !== connected
+            ? { ...prev, connectedLiveApi: connected }
+            : prev,
+        ),
+    );
     return () => unsub();
   }, [loadBootstrap]);
 
@@ -214,9 +130,9 @@ export function useNightfallWorkspace() {
     }
   }
 
-  async function markDuplicate(id: string): Promise<void> {
+  async function markDuplicate(id: string, duplicateOfId?: string): Promise<void> {
     try {
-      const res = await markFindingDuplicateApi(id);
+      const res = await markFindingDuplicateApi(id, duplicateOfId);
       setData((p) =>
         p
           ? {
@@ -229,6 +145,90 @@ export function useNightfallWorkspace() {
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to mark duplicate.');
     }
+  }
+
+  async function toggleRepositoryCoverage(repoId: string): Promise<void> {
+    const res = await toggleRepositoryCoverageApi(repoId);
+    setData((p) =>
+      p
+        ? { ...p, repositories: p.repositories.map((r) => (r.id === repoId ? res.repository : r)) }
+        : p,
+    );
+  }
+
+  async function prepareCampaign(input: Parameters<typeof prepareCampaignApi>[0]): Promise<RedTeamCampaignRun> {
+    const res = await prepareCampaignApi(input);
+    setData((p) =>
+      p
+        ? { ...p, campaigns: [res.campaign, ...p.campaigns.filter((c) => c.id !== res.campaign.id)] }
+        : p,
+    );
+    setActiveCampaignId(res.campaign.id);
+    setYamlDraft(res.campaign.yamlText);
+    return res.campaign;
+  }
+
+  async function launchCampaign(
+    campaignId: string,
+    yamlText: string,
+    signedManifest?: unknown,
+  ): Promise<RedTeamCampaignRun | null> {
+    try {
+      const res = await launchCampaignApi(campaignId, yamlText, signedManifest);
+      setData((p) =>
+        p ? { ...p, campaigns: p.campaigns.map((c) => (c.id === campaignId ? res.campaign : c)) } : p,
+      );
+      return res.campaign;
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to launch Red Team campaign.');
+      return null;
+    }
+  }
+
+  async function resolveApproval(approvalId: string, decision: 'approved' | 'rejected'): Promise<void> {
+    try {
+      const res = await resolveApprovalApi(approvalId, decision);
+      setData((p) =>
+        p
+          ? {
+              ...p,
+              approvals: p.approvals.map((a) => (a.id === approvalId ? res.approval : a)),
+              campaigns: res.campaign
+                ? p.campaigns.map((c) => (c.id === res.campaign!.id ? res.campaign! : c))
+                : p.campaigns,
+            }
+          : p,
+      );
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to resolve approval request.');
+    }
+  }
+
+  async function followUpFix(fixId: string, message: string): Promise<void> {
+    const res = await sendFixFollowUpApi(fixId, message);
+    setData((p) => (p ? { ...p, fixes: p.fixes.map((fx) => (fx.id === fixId ? res.fix : fx)) } : p));
+  }
+
+  async function mergeAndVerifyFix(fixId: string): Promise<void> {
+    const res = await mergeAndVerifyFixApi(fixId);
+    setData((p) =>
+      p
+        ? {
+            ...p,
+            fixes: p.fixes.map((fx) => (fx.id === fixId ? res.fix : fx)),
+            findings: res.finding
+              ? p.findings.map((f) => (f.id === res.finding!.id ? res.finding! : f))
+              : p.findings,
+            repositories: res.repositories ?? p.repositories,
+            scorecardReports: res.scorecardReport
+              ? p.scorecardReports.map((r) =>
+                  r.repository === res.scorecardReport!.repository ? res.scorecardReport! : r,
+                )
+              : p.scorecardReports,
+            overview: res.overview ?? p.overview,
+          }
+        : p,
+    );
   }
 
   async function toggleKillSwitch(): Promise<void> {
@@ -266,6 +266,12 @@ export function useNightfallWorkspace() {
     submitNewScan,
     runScorecardScan,
     markDuplicate,
+    toggleRepositoryCoverage,
+    prepareCampaign,
+    launchCampaign,
+    resolveApproval,
+    followUpFix,
+    mergeAndVerifyFix,
     toggleKillSwitch,
     toggleRepositoryCoverageApi,
     prepareCampaignApi,

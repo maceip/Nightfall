@@ -1,4 +1,5 @@
 import React from 'react';
+import { HStack } from '@astryxdesign/core/HStack';
 import type { FixProposal } from '@nightfall/core-contracts';
 import {
   Badge,
@@ -35,14 +36,14 @@ export function FixesScreen({
       header: 'Fix',
       cell: (fix) => (
         <div className="space-y-1">
-          <div className="font-medium text-ink">{fix.title}</div>
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-primary-500">
+          <div className="font-semibold text-ink">{fix.title}</div>
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
             <span>{fix.subtitle}</span>
             {fix.branchName ? (
-              <span className="inline-code inline-flex items-center gap-1 text-[11px]">
+              <span className="inline-flex items-center gap-1 font-mono text-[11.5px] text-ink-secondary">
+                <span>·</span>
                 <GitBranchIcon size={12} />
                 <span>{fix.branchName}</span>
-                {fix.commitSha ? <span>@{fix.commitSha.slice(0, 7)}</span> : null}
               </span>
             ) : null}
           </div>
@@ -51,15 +52,15 @@ export function FixesScreen({
     },
     {
       key: 'repository',
-      header: 'Repository & Sandbox',
+      header: 'Repository',
       className: 'w-64',
       cell: (fix) => (
         <div className="space-y-1">
-          <div className="font-medium text-ink">{fix.repository}</div>
-          <div className="flex flex-wrap items-center gap-1.5 text-xs text-primary-500">
+          <div className="font-mono text-[13px] font-medium text-ink">{fix.repository}</div>
+          <HStack gap={1.5} align="center" wrap="wrap" className="text-xs text-ink-muted">
             <span>{fix.snapshotLabel}</span>
             <Badge variant="accent">{formatSandboxLabel(fix.sandboxBackend)}</Badge>
-          </div>
+          </HStack>
         </div>
       ),
     },
@@ -68,10 +69,10 @@ export function FixesScreen({
       header: 'Findings',
       className: 'w-36',
       cell: (fix) => (
-        <span className="inline-flex items-center gap-2">
+        <HStack gap={2} align="center">
           <span className="font-medium text-ink">{fix.findingIds.length}</span>
           <SeverityBadge severity={fix.severity} />
-        </span>
+        </HStack>
       ),
     },
     {
@@ -82,7 +83,7 @@ export function FixesScreen({
     },
     {
       key: 'action',
-      header: '',
+      header: 'Action',
       className: 'w-36 text-right',
       cell: (fix) => (
         <Button
@@ -101,7 +102,7 @@ export function FixesScreen({
   ];
 
   return (
-    <div id="view-fixes" className="space-y-4 tabular-nums">
+    <div id="view-fixes" className="relative space-y-4 tabular-nums">
       <DataTable
         columns={columns}
         rows={fixes}
@@ -114,17 +115,17 @@ export function FixesScreen({
       {showToast && fixes.length > 0 ? (
         <div
           role="status"
-          className="flex items-center justify-between gap-3 rounded-xl border border-primary-200 bg-primary-950 px-4 py-2.5 text-xs font-medium text-surface shadow-md"
+          className="fixed right-6 bottom-5 z-30 flex max-w-sm items-start justify-between gap-3 rounded-2xl border border-hairline-strong bg-canvas p-4 text-[13px] font-medium text-ink shadow-lg"
         >
-          <span>
-            {fixes.length} verified fix proposal{fixes.length === 1 ? '' : 's'} active in Nightfall
-            Defense Factory. Each finding maps to an isolated Git patch.
+          <span className="leading-snug">
+            {fixes.length} fix proposal{fixes.length === 1 ? '' : 's'} ready. Each finding has its
+            own isolated patch.
           </span>
           <Button
             id="btn-dismiss-fixes-toast"
             variant="ghost"
             size="icon-sm"
-            className="text-surface hover:bg-primary-800 hover:text-surface"
+            aria-label="Dismiss fixes notification"
             onClick={onDismissToast}
           >
             <CloseIcon size={15} />

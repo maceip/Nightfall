@@ -1,4 +1,7 @@
 import React from 'react';
+import { Code } from '@astryxdesign/core/Code';
+import { HStack } from '@astryxdesign/core/HStack';
+import { Token } from '@astryxdesign/core/Token';
 import type {
   FindingRecord,
   ScorecardCheckResult,
@@ -6,7 +9,6 @@ import type {
   Severity,
 } from '@nightfall/core-contracts';
 import {
-  Badge,
   Button,
   CloseIcon,
   DialogClose,
@@ -61,17 +63,21 @@ export function ScorecardCheckDrawer({
         if (!nextOpen) onClose();
       }}
     >
-      <DrawerContent aria-label={`Scorecard check ${check.name}`}>
-        <div className="flex items-start justify-between gap-3 border-b border-primary-200 px-5 py-4">
+      <DrawerContent
+        floating
+        className="w-[min(580px,calc(100vw-24px))]"
+        aria-label={`Scorecard check ${check.name}`}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-hairline bg-canvas px-5 py-4">
           <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
+            <HStack gap={2} align="center" wrap="wrap">
               <DialogTitle>{check.name}</DialogTitle>
               <ScorecardScorePill score={check.score} />
               <SeverityBadge severity={mapScorecardRiskToSeverity(check.risk)} />
               <StatusBadge status={statusMapped} label={check.status} />
-            </div>
+            </HStack>
             <DialogDescription>
-              {repository} · {check.short || check.reason}
+              <span className="font-mono">{repository}</span> · {check.short || check.reason}
             </DialogDescription>
           </div>
           <DialogClose id="btn-close-scorecard-check-drawer" aria-label="Close check inspector">
@@ -79,35 +85,35 @@ export function ScorecardCheckDrawer({
           </DialogClose>
         </div>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        <div className="flex-1 space-y-5 overflow-y-auto bg-canvas px-5 py-4 tabular-nums">
           <section className="space-y-1.5">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-primary-500">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
               EVALUATION REASON
             </div>
             <p className="m-0 text-[13px] leading-relaxed text-ink">{check.reason}</p>
             {check.description ? (
-              <p className="m-0 text-xs leading-relaxed text-primary-600">{check.description}</p>
+              <p className="m-0 text-xs leading-relaxed text-ink-secondary">{check.description}</p>
             ) : null}
           </section>
 
           {check.findings.length > 0 ? (
             <section className="space-y-2">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-primary-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                 PROBE EVIDENCE ({check.findings.length})
               </div>
               <div className="space-y-2">
                 {check.findings.map((probe, idx) => (
                   <div
                     key={`${probe.probe}-${idx}`}
-                    className="rounded-lg border border-primary-200 bg-primary-50/70 p-3 text-xs"
+                    className="rounded-xl border border-hairline bg-sidebar p-3 text-xs"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-mono font-medium text-ink">{probe.probe}</span>
-                      <Badge variant="informational">{probe.outcome}</Badge>
-                    </div>
-                    <p className="mt-1 mb-0 text-primary-800">{probe.message}</p>
+                    <HStack justify="between" align="center" wrap="wrap" gap={2}>
+                      <Code size="inherit">{probe.probe}</Code>
+                      <Token label={probe.outcome} size="sm" color="gray" />
+                    </HStack>
+                    <p className="mt-1.5 mb-0 text-ink">{probe.message}</p>
                     {probe.location?.path ? (
-                      <div className="mt-1.5 font-mono text-[11px] text-primary-600">
+                      <div className="mt-1.5 font-mono text-[11px] text-ink-muted">
                         {probe.location.path}
                         {probe.location.lineStart ? `:${probe.location.lineStart}` : ''}
                       </div>
@@ -120,7 +126,7 @@ export function ScorecardCheckDrawer({
 
           {patchFindings.map((pf, idx) => (
             <section key={`patch-${idx}`} className="space-y-1.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-primary-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                 SUGGESTED REMEDIATION DIFF
               </div>
               <UnifiedDiffViewer
@@ -132,10 +138,10 @@ export function ScorecardCheckDrawer({
 
           {check.remediationSteps.length > 0 ? (
             <section className="space-y-1.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-primary-500">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                 REMEDIATION STEPS
               </div>
-              <ol className="m-0 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-primary-800">
+              <ol className="m-0 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-secondary">
                 {check.remediationSteps.map((step, idx) => (
                   <li key={idx}>{step}</li>
                 ))}
@@ -144,15 +150,15 @@ export function ScorecardCheckDrawer({
           ) : null}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-primary-200 bg-primary-50/60 px-5 py-3.5">
+        <div className="flex items-center justify-between gap-2 border-t border-hairline bg-canvas px-5 py-3.5">
           {check.documentationUrl ? (
-            <span className="truncate font-mono text-[11px] text-primary-500">
+            <span className="truncate font-mono text-[11px] text-ink-muted">
               {check.documentationUrl}
             </span>
           ) : (
             <span />
           )}
-          <div className="flex items-center gap-2">
+          <HStack gap={2} align="center">
             <Button variant="outline" onClick={onClose}>
               Close
             </Button>
@@ -167,7 +173,7 @@ export function ScorecardCheckDrawer({
                 {linkedFinding.fixId ? 'Continue fix' : 'Fix with Nightfall'}
               </Button>
             ) : null}
-          </div>
+          </HStack>
         </div>
       </DrawerContent>
     </DialogRoot>

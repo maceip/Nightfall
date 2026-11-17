@@ -1,85 +1,112 @@
 import React from 'react';
-import type { FixProposal, OverviewSummary, Severity } from '@nightfall/core-contracts';
+import { Code } from '@astryxdesign/core/Code';
+import { HStack } from '@astryxdesign/core/HStack';
+import { VStack } from '@astryxdesign/core/VStack';
+import type {
+  FixProposal,
+  OverviewSummary,
+  ScorecardReportRecord,
+  Severity,
+} from '@nightfall/core-contracts';
 import {
+  Badge,
   Button,
-  Card,
   ChevronRightIcon,
+  ConnectedKpiStrip,
   DailyTrendChart,
+  GitBranchIcon,
+  MantisClawIcon,
+  ScorecardPostureIcon,
+  ScorecardScorePill,
   SectionHeader,
+  SeverityProportionalBars,
   StatusBadge,
 } from '@nightfall/ui-kit';
 
 export type OverviewScreenProps = {
   overview: OverviewSummary;
   fixes: FixProposal[];
+  scorecardReports?: ScorecardReportRecord[];
   onNavigateFindings: (severity?: Severity | null) => void;
   onNavigateFixes: () => void;
   onSelectFix: (fix: FixProposal) => void;
+  onNavigateScorecard?: () => void;
+  onNavigateSettings?: () => void;
 };
-
-const POSTURE_BARS: Array<{
-  key: 'critical' | 'high' | 'medium';
-  label: string;
-  barClass: string;
-}> = [
-  { key: 'critical', label: 'Critical', barClass: 'bg-rose-600' },
-  { key: 'high', label: 'High', barClass: 'bg-orange-500' },
-  { key: 'medium', label: 'Medium', barClass: 'bg-amber-500' },
-];
 
 export function OverviewScreen({
   overview,
   fixes,
+  scorecardReports,
   onNavigateFindings,
   onNavigateFixes,
   onSelectFix,
+  onNavigateScorecard,
+  onNavigateSettings,
 }: OverviewScreenProps): React.ReactElement {
   const proposedFixes = fixes.filter((f) => f.status === 'proposed').slice(0, 3);
-  const maxBar = Math.max(
-    overview.severityCounts.critical,
-    overview.severityCounts.high,
-    overview.severityCounts.medium,
-    1,
-  );
+
+  const avgScore =
+    typeof overview.averageScorecardScore === 'number' &&
+    Number.isFinite(overview.averageScorecardScore)
+      ? overview.averageScorecardScore
+      : scorecardReports && scorecardReports.length > 0
+        ? scorecardReports.reduce((sum, r) => sum + (Number.isFinite(r.aggregateScore) ? r.aggregateScore : 0), 0) /
+          scorecardReports.length
+        : null;
 
   return (
-    <div id="view-overview" className="space-y-5 tabular-nums">
-      <div>
+    <VStack id="view-overview" gap={5} className="tabular-nums">
+      <section>
         <SectionHeader
           title="Proposed fixes"
           actions={
-            <Button
+            <button
               id="btn-overview-all-fixes"
-              variant="ghost"
-              size="sm"
+              type="button"
               onClick={onNavigateFixes}
+              className="inline-flex cursor-pointer items-center gap-1 rounded-full px-2.5 py-1 text-[13px] font-medium text-ink-secondary transition-colors hover:bg-muted hover:text-ink"
             >
-              <span>{overview.proposedFixesCount}</span>
+              <span>View all</span>
+              <span className="font-semibold text-ink">{overview.proposedFixesCount}</span>
               <ChevronRightIcon size={15} />
-            </Button>
+            </button>
           }
         />
 
         {proposedFixes.length === 0 ? (
-          <Card className="text-[13px] text-primary-600">
+          <div className="rounded-2xl border border-hairline bg-canvas p-4 text-[13px] text-ink-secondary">
             No pending proposed fixes. Select a finding to synthesize a verified patch in Nightfall
             Defense Factory.
-          </Card>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             {proposedFixes.map((fix) => (
-              <Card key={fix.id} className="flex flex-col justify-between gap-4">
-                <div className="space-y-1">
+              <div
+                key={fix.id}
+                className="flex flex-col justify-between gap-4 rounded-2xl border border-hairline bg-canvas p-4"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-ink-muted">
+                    <span>{fix.repository}</span>
+                    {fix.branchName ? (
+                      <span className="inline-flex items-center gap-1">
+                        <span>·</span>
+                        <GitBranchIcon size={11} />
+                        <span>{fix.branchName}</span>
+                      </span>
+                    ) : null}
+                  </div>
                   <h3 className="m-0 text-[13.5px] font-semibold leading-snug text-ink">
                     {fix.title}
                   </h3>
-                  <p className="m-0 text-xs text-primary-600">
+                  <p className="m-0 text-xs text-ink-secondary">
                     Fixes {fix.findingIds.length} finding{fix.findingIds.length === 1 ? '' : 's'}
                   </p>
-                  <p className="m-0 text-xs text-primary-500">{fix.repository}</p>
                 </div>
-                <div className="flex items-center justify-between pt-1">
-                  <StatusBadge status={fix.status} />
+
+                <HStack justify="between" align="center" gap={2}>
+                  <StatusBadge status="proposed" label="Proposed" />
                   <Button
                     id={`btn-overview-review-${fix.id}`}
                     variant="outline"
@@ -88,64 +115,60 @@ export function OverviewScreen({
                   >
                     Review
                   </Button>
-                </div>
-              </Card>
+                </HStack>
+              </div>
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 overflow-hidden rounded-xl border border-primary-200 bg-surface md:grid-cols-2 md:divide-x md:divide-primary-200">
-        <div className="p-5">
-          <button
-            type="button"
-            onClick={() => onNavigateFindings(null)}
-            className="mb-4 flex w-full items-center justify-between text-left cursor-pointer"
-          >
-            <span className="text-[14.5px] font-medium text-ink">
-              <span className="font-semibold">{overview.openFindingsCount}</span> Open findings
-            </span>
-            <ChevronRightIcon size={16} className="text-primary-500" />
-          </button>
+      <section>
+        <div className="grid grid-cols-1 divide-y divide-hairline overflow-hidden rounded-2xl border border-hairline bg-canvas lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+          <div className="space-y-4 p-5">
+            <button
+              type="button"
+              onClick={() => onNavigateFindings(null)}
+              className="flex w-full cursor-pointer items-center justify-between gap-3 text-left"
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="text-[19px] font-semibold tracking-tight text-ink">
+                  {overview.openFindingsCount}
+                </span>
+                <span className="text-[15px] font-medium text-ink-secondary">Open findings</span>
+              </div>
+              <ChevronRightIcon size={16} className="text-ink-muted" />
+            </button>
 
-          <div className="space-y-3">
-            {POSTURE_BARS.map((row) => {
-              const count = overview.severityCounts[row.key];
-              const widthPct = count === 0 ? 4 : Math.max(10, Math.round((count / maxBar) * 100));
-              return (
-                <div
-                  key={row.key}
-                  id={`overview-sev-row-${row.key}`}
-                  onClick={() => onNavigateFindings(row.key)}
-                  className="grid grid-cols-[76px_1fr_40px] items-center gap-3 rounded-md px-1.5 py-1 transition-colors hover:bg-primary-100/70 cursor-pointer"
-                >
-                  <span className="text-[13px] font-medium text-ink">{row.label}</span>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-primary-100">
-                    <div
-                      className={`h-full rounded-full ${row.barClass}`}
-                      style={{ width: `${widthPct}%` }}
-                    />
-                  </div>
-                  <span className="text-right text-[13px] font-medium text-ink">{count}</span>
+            <SeverityProportionalBars
+              counts={overview.severityCounts}
+              onSelectSeverity={(sev) => onNavigateFindings(sev)}
+            />
+          </div>
+
+          <div className="space-y-3 p-5">
+            <button
+              type="button"
+              onClick={onNavigateFixes}
+              className="flex w-full cursor-pointer items-center justify-between gap-3 text-left"
+            >
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[19px] font-semibold tracking-tight text-ink">
+                    {overview.fixedFindingsCount}
+                  </span>
+                  <span className="text-[15px] font-medium text-ink-secondary">Fixed findings</span>
                 </div>
-              );
-            })}
+                <div className="mt-0.5 text-xs text-ink-muted">Daily trend · last 7 days (UTC)</div>
+              </div>
+              <ChevronRightIcon size={16} className="text-ink-muted" />
+            </button>
+
+            <DailyTrendChart data={overview.dailyTrend} />
           </div>
         </div>
+      </section>
 
-        <div className="border-t border-primary-200 p-5 md:border-t-0">
-          <div className="mb-1 flex items-center justify-between">
-            <span className="text-[14.5px] font-medium text-ink">
-              <span className="font-semibold">{overview.fixedFindingsCount}</span> Fixed findings
-            </span>
-            <ChevronRightIcon size={16} className="text-primary-500" />
-          </div>
-          <div className="mb-2 text-xs text-primary-500">Daily trend · last 7 days (UTC)</div>
-          <DailyTrendChart data={overview.dailyTrend} />
-        </div>
-      </div>
-
-      <Card className="p-5">
+      <section className="space-y-2.5">
         <SectionHeader
           title="Finding status"
           actions={
@@ -153,7 +176,7 @@ export function OverviewScreen({
               id="select-overview-timeframe"
               defaultValue="all"
               aria-label="Finding status timeframe"
-              className="h-7 rounded-md border border-primary-200 bg-primary-50 px-2.5 text-xs font-medium text-ink outline-none"
+              className="h-8 rounded-full border border-hairline-strong bg-canvas px-3 text-xs font-medium text-ink outline-none"
             >
               <option value="all">All time</option>
               <option value="30d">Last 30 days</option>
@@ -162,28 +185,67 @@ export function OverviewScreen({
           }
         />
 
-        <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <StatusCounterCell count={overview.statusCounts.new} label="New" />
-          <StatusCounterCell count={overview.statusCounts.triaged} label="Triaged" />
-          <StatusCounterCell count={overview.statusCounts.in_progress} label="In Progress" />
-          <StatusCounterCell count={overview.statusCounts.fixed} label="Fixed" />
-        </div>
-      </Card>
-    </div>
-  );
-}
+        <ConnectedKpiStrip
+          labelFirst={false}
+          cells={[
+            {
+              key: 'new',
+              label: 'New',
+              value: overview.statusCounts.new,
+              onClick: () => onNavigateFindings(null),
+            },
+            {
+              key: 'triaged',
+              label: 'Triaged',
+              value: overview.statusCounts.triaged,
+              onClick: () => onNavigateFindings(null),
+            },
+            {
+              key: 'in_progress',
+              label: 'In progress',
+              value: overview.statusCounts.in_progress,
+              onClick: () => onNavigateFindings(null),
+            },
+            {
+              key: 'fixed',
+              label: 'Fixed in last 7d',
+              value: overview.fixedFindingsCount,
+              onClick: () => onNavigateFixes(),
+            },
+          ]}
+        />
+      </section>
 
-function StatusCounterCell({
-  count,
-  label,
-}: {
-  count: number;
-  label: string;
-}): React.ReactElement {
-  return (
-    <div className="rounded-lg border border-primary-200/70 bg-primary-50/60 px-3.5 py-3">
-      <div className="text-2xl font-semibold tracking-tight text-ink">{count}</div>
-      <div className="mt-0.5 text-xs text-primary-600">{label}</div>
-    </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <button
+          id="btn-overview-scorecard-strip"
+          type="button"
+          onClick={() => onNavigateScorecard?.()}
+          className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-hairline bg-canvas px-4 py-3 text-left transition-colors hover:bg-sidebar"
+        >
+          <HStack gap={2} align="center" wrap="wrap">
+            <ScorecardPostureIcon size={16} className="text-status-mint-ink" />
+            <span className="text-[13px] font-semibold text-ink">Nightfall Scorecard</span>
+            <ScorecardScorePill score={avgScore} />
+          </HStack>
+          <ChevronRightIcon size={15} className="text-ink-muted" />
+        </button>
+
+        <button
+          id="btn-overview-mantis-strip"
+          type="button"
+          onClick={() => onNavigateSettings?.()}
+          className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-hairline bg-canvas px-4 py-3 text-left transition-colors hover:bg-sidebar"
+        >
+          <HStack gap={2} align="center" wrap="wrap">
+            <MantisClawIcon size={16} className="text-accent-violet" />
+            <span className="text-[13px] font-semibold text-ink">Mantis Pipeline</span>
+            <Code size="inherit">maceip/mantis</Code>
+            <Badge variant="preview">Preview · 20-stage DAG</Badge>
+          </HStack>
+          <ChevronRightIcon size={15} className="text-ink-muted" />
+        </button>
+      </div>
+    </VStack>
   );
 }

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { HStack } from '@astryxdesign/core/HStack';
+import { VStack } from '@astryxdesign/core/VStack';
 import type { NewScanRequest, RepositoryRecord } from '@nightfall/core-contracts';
 import {
   Button,
@@ -21,7 +23,7 @@ export type NewScanDrawerProps = {
   onSubmitScan: (req: NewScanRequest) => Promise<void>;
 };
 
-const SCAN_METHODS: Array<{
+const SCAN_METHODS: ReadonlyArray<{
   value: NewScanRequest['method'];
   title: string;
   subtitle: string;
@@ -44,7 +46,8 @@ const SCAN_METHODS: Array<{
   {
     value: 'scorecard_scan',
     title: 'Supply-chain & Scorecard posture',
-    subtitle: 'Evaluate CI workflow permissions, pinned actions, binary artifacts, and supply-chain checks.',
+    subtitle:
+      'Evaluate CI workflow permissions, pinned actions, binary artifacts, and supply-chain checks.',
   },
 ];
 
@@ -55,9 +58,13 @@ export function NewScanDrawer({
   onSubmitScan,
 }: NewScanDrawerProps): React.ReactElement | null {
   const defaultLocalRepo = repositories.find((r) => Boolean(r.localPath));
+  const initialRepo = defaultLocalRepo?.name ?? repositories[0]?.name ?? 'northstar-docs';
+  const initialLocalPath = defaultLocalRepo?.localPath ?? `/workspace/${initialRepo}`;
+
   const [mode, setMode] = useState<'cloud' | 'local'>('cloud');
-  const [repository, setRepository] = useState(repositories[0]?.name ?? 'northstar-docs');
-  const [localPath, setLocalPath] = useState(defaultLocalRepo?.localPath ?? '');
+  const [repository, setRepository] = useState(initialRepo);
+  const [localPath, setLocalPath] = useState(initialLocalPath);
+  const [cloneUrl, setCloneUrl] = useState('');
   const [method, setMethod] = useState<NewScanRequest['method']>('repository_scan');
   const [scope, setScope] = useState<NewScanRequest['scope']>('full_repository');
   const [specificPath, setSpecificPath] = useState('src/');
@@ -65,16 +72,25 @@ export function NewScanDrawer({
 
   if (!open) return null;
 
-  async function handleChooseLocalDirectory(): Promise<void> {
+  function resolveFallbackLocalPath(repoName: string): string {
+    const matched = repositories.find((r) => r.name === repoName);
+    return matched?.localPath ?? defaultLocalRepo?.localPath ?? `/workspace/${repoName || 'northstar-docs'}`;
+  }
+
+  function handleSelectLocalMode(): void {
     setMode('local');
+    if (!localPath.trim()) {
+      setLocalPath(resolveFallbackLocalPath(repository));
+    }
+  }
+
+  async function handleBrowseLocalDirectory(): Promise<void> {
+    handleSelectLocalMode();
     const chosen = await platformBridge.pickLocalRepository();
     if (chosen) {
       setLocalPath(chosen);
       const basename = chosen.split('/').filter(Boolean).pop();
       if (basename) setRepository(basename);
-    } else if (!localPath && defaultLocalRepo?.localPath) {
-      setLocalPath(defaultLocalRepo.localPath);
-      setRepository(defaultLocalRepo.name);
     }
   }
 
@@ -85,8 +101,12 @@ export function NewScanDrawer({
         if (!nextOpen) onClose();
       }}
     >
-      <DrawerContent aria-label="New scan">
-        <div className="flex items-start justify-between gap-3 border-b border-primary-200 px-5 py-4">
+      <DrawerContent
+        floating
+        className="w-[min(520px,calc(100vw-24px))]"
+        aria-label="New scan"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-hairline bg-canvas px-5 py-4">
           <div>
             <DialogTitle>New scan</DialogTitle>
             <DialogDescription className="mt-0.5">
@@ -98,12 +118,12 @@ export function NewScanDrawer({
           </DialogClose>
         </div>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4">
+        <div className="flex-1 space-y-5 overflow-y-auto bg-canvas px-5 py-4">
           <SegmentedControl
             value={mode}
             onChange={(next) => {
               if (next === 'local') {
-                void handleChooseLocalDirectory();
+                handleSelectLocalMode();
               } else {
                 setMode('cloud');
               }
@@ -114,7 +134,8 @@ export function NewScanDrawer({
                 value: 'cloud',
                 label: (
                   <span>
-                    Cloud <span className="text-primary-500 font-normal">· Recommended</span>
+                    Cloud <span className="text-ink-muted">·</span>{' '}
+                    <span className="font-medium text-accent-violet">Recommended</span>
                   </span>
                 ),
               },
@@ -126,100 +147,102 @@ export function NewScanDrawer({
             ]}
           />
 
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             <label htmlFor="select-scan-repo" className="block text-[13px] font-medium text-ink">
               {mode === 'cloud' ? 'Repository' : 'Local Workspace Directory'}
             </label>
             {mode === 'cloud' ? (
-              <select
-                id="select-scan-repo"
-                value={repository}
-                onChange={(e) => setRepository(e.target.value)}
-                className="h-9 w-full rounded-lg border border-primary-200 bg-surface px-3 text-[13px] text-ink outline-none focus:border-primary-400"
-              >
-                {repositories.map((r) => (
-                  <option key={r.id} value={r.name}>
-                    {r.fullName}
-                  </option>
-                ))}
-              </select>
+              <VStack gap={2}>
+                <select
+                  id="select-scan-repo"
+                  value={repository}
+                  onChange={(e) => {
+                    const nextRepo = e.target.value;
+                    setRepository(nextRepo);
+                    setLocalPath(resolveFallbackLocalPath(nextRepo));
+                  }}
+                  className="h-9 w-full rounded-full border border-hairline-strong bg-canvas px-3.5 text-[13px] text-ink outline-none"
+                >
+                  {repositories.map((r) => (
+                    <option key={r.id} value={r.name}>
+                      {r.fullName}
+                    </option>
+                  ))}
+                </select>
+                <Input
+                  id="input-scan-clone-url"
+                  type="url"
+                  value={cloneUrl}
+                  onChange={(e) => setCloneUrl(e.target.value)}
+                  placeholder="Optional Git clone URL (https://github.com/org/repo.git)"
+                  className="border-hairline-strong bg-canvas"
+                />
+              </VStack>
             ) : (
-              <div className="flex items-center gap-2">
+              <HStack gap={2} align="center">
                 <Input
                   id="input-local-repo-path"
                   value={localPath}
-                  placeholder="/path/to/local/repository"
+                  placeholder="/workspace/northstar-docs"
                   onChange={(e) => {
                     const nextPath = e.target.value;
                     setLocalPath(nextPath);
                     const basename = nextPath.split('/').filter(Boolean).pop();
                     if (basename) setRepository(basename);
                   }}
+                  className="flex-1 border-hairline-strong bg-canvas font-mono text-xs"
                 />
-                <Button variant="outline" onClick={() => void handleChooseLocalDirectory()}>
+                <Button variant="outline" onClick={() => void handleBrowseLocalDirectory()}>
                   <FolderIcon size={14} />
                   <span>Browse</span>
                 </Button>
-              </div>
+              </HStack>
             )}
           </div>
 
-          <div className="space-y-2">
-            <div className="text-[13px] font-medium text-ink">Scan method</div>
+          <div className="space-y-1">
+            <div className="mb-1.5 text-[13px] font-semibold text-ink">Scan method</div>
             {SCAN_METHODS.map((opt) => (
-              <label
+              <ThickRingRadioRow
                 key={opt.value}
-                className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-primary-200 bg-surface p-3 transition-colors hover:bg-primary-50"
-              >
-                <input
-                  type="radio"
-                  name="scan-method"
-                  checked={method === opt.value}
-                  onChange={() => setMethod(opt.value)}
-                  className="mt-0.5 accent-primary-900"
-                />
-                <div>
-                  <div className="text-[13px] font-medium text-ink">{opt.title}</div>
-                  <div className="mt-0.5 text-xs text-primary-600">{opt.subtitle}</div>
-                </div>
-              </label>
+                name="scan-method"
+                checked={method === opt.value}
+                title={opt.title}
+                subtitle={opt.subtitle}
+                onSelect={() => setMethod(opt.value)}
+              />
             ))}
           </div>
 
-          <div className="space-y-2">
-            <div className="text-[13px] font-medium text-ink">Scope</div>
-            <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-primary-200 bg-surface p-3 transition-colors hover:bg-primary-50">
-              <input
-                type="radio"
-                name="scan-scope"
-                checked={scope === 'full_repository'}
-                onChange={() => setScope('full_repository')}
-                className="accent-primary-900"
-              />
-              <span className="text-[13px] font-medium text-ink">Full repository</span>
-            </label>
-            <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-primary-200 bg-surface p-3 transition-colors hover:bg-primary-50">
-              <input
-                type="radio"
-                name="scan-scope"
-                checked={scope === 'specific_paths'}
-                onChange={() => setScope('specific_paths')}
-                className="accent-primary-900"
-              />
-              <span className="text-[13px] font-medium text-ink">Specific folder or files</span>
-            </label>
+          <div className="space-y-1">
+            <div className="mb-1.5 text-[13px] font-semibold text-ink">Scope</div>
+            <ThickRingRadioRow
+              name="scan-scope"
+              checked={scope === 'full_repository'}
+              title="Full repository"
+              onSelect={() => setScope('full_repository')}
+            />
+            <ThickRingRadioRow
+              name="scan-scope"
+              checked={scope === 'specific_paths'}
+              title="Specific folder or files"
+              onSelect={() => setScope('specific_paths')}
+            />
             {scope === 'specific_paths' ? (
-              <Input
-                id="input-scan-specific-paths"
-                type="text"
-                value={specificPath}
-                onChange={(e) => setSpecificPath(e.target.value)}
-              />
+              <div className="pt-1 pl-7">
+                <Input
+                  id="input-scan-specific-paths"
+                  type="text"
+                  value={specificPath}
+                  onChange={(e) => setSpecificPath(e.target.value)}
+                  className="border-hairline-strong bg-canvas font-mono text-xs"
+                />
+              </div>
             ) : null}
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-primary-200 bg-primary-50/60 px-5 py-3.5">
+        <div className="flex items-center justify-end gap-2 border-t border-hairline bg-canvas px-5 py-3.5">
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
@@ -229,10 +252,12 @@ export function NewScanDrawer({
             onClick={async () => {
               setSubmitting(true);
               try {
+                const effectiveLocalPath = localPath.trim() || resolveFallbackLocalPath(repository);
                 await onSubmitScan({
                   mode,
                   repository,
-                  ...(mode === 'local' && localPath.trim() ? { localPath: localPath.trim() } : {}),
+                  ...(mode === 'local' ? { localPath: effectiveLocalPath } : {}),
+                  ...(mode === 'cloud' && cloneUrl.trim() ? { cloneUrl: cloneUrl.trim() } : {}),
                   method,
                   scope,
                   ...(scope === 'specific_paths' ? { paths: [specificPath] } : {}),
@@ -243,10 +268,48 @@ export function NewScanDrawer({
               }
             }}
           >
-            Start Scan
+            Start scan
           </Button>
         </div>
       </DrawerContent>
     </DialogRoot>
+  );
+}
+
+function ThickRingRadioRow({
+  name,
+  checked,
+  title,
+  subtitle,
+  onSelect,
+}: {
+  name: string;
+  checked: boolean;
+  title: string;
+  subtitle?: string;
+  onSelect: () => void;
+}): React.ReactElement {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-xl px-1.5 py-2 transition-colors hover:bg-sidebar">
+      <input
+        type="radio"
+        name={name}
+        checked={checked}
+        onChange={onSelect}
+        className="sr-only"
+      />
+      <span
+        aria-hidden="true"
+        className={`mt-0.5 size-4 shrink-0 rounded-full bg-canvas transition-all ${
+          checked ? 'border-[5px] border-ink' : 'border border-hairline-strong'
+        }`}
+      />
+      <span className="min-w-0">
+        <span className="block text-[13px] font-medium text-ink">{title}</span>
+        {subtitle ? (
+          <span className="mt-0.5 block text-xs text-ink-secondary">{subtitle}</span>
+        ) : null}
+      </span>
+    </label>
   );
 }

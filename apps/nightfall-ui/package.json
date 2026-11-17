@@ -23,16 +23,22 @@
     "bundle:dmg": "node scripts/bundle-desktop.mjs --os mac --arch arm64 --targets dmg",
     "bundle:msi": "node scripts/bundle-desktop.mjs --os win --arch x64 --targets msi",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "astryx:doctor": "astryx doctor --built ."
   },
   "dependencies": {
+    "@astryxdesign/core": "0.7.16",
+    "@astryxdesign/theme-neutral": "0.7.16",
     "@nightfall/core-contracts": "workspace:*",
     "@nightfall/ui-kit": "workspace:*",
+    "@stylexjs/stylex": "0.19.2",
+    "lucide-react": "^1.66.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "ws": "^8.18.1"
   },
   "devDependencies": {
+    "@astryxdesign/cli": "0.7.16",
     "@electron/asar": "3.4.1",
     "@nightfall/api-gateway": "workspace:*",
     "@nightfall/audit-ledger": "workspace:*",

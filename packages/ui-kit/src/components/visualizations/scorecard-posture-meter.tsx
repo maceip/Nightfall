@@ -35,17 +35,17 @@ export function ScorecardScorePill({
 
   const toneClass =
     safe >= 8
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      ? 'bg-[var(--nf-posture-pass-bg)] text-[var(--nf-posture-pass-fg)]'
       : safe >= 5
-        ? 'border-amber-200 bg-amber-50 text-amber-800'
-        : 'border-rose-200 bg-rose-50 text-rose-800';
+        ? 'bg-[var(--nf-posture-warn-bg)] text-[var(--nf-posture-warn-fg)]'
+        : 'bg-[var(--nf-posture-fail-bg)] text-[var(--nf-posture-fail-fg)]';
 
   const formatted = Number.isInteger(safe) ? String(safe) : safe.toFixed(1);
 
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border font-semibold whitespace-nowrap tabular-nums',
+        'inline-flex items-center gap-1 rounded-[6px] border-0 font-semibold whitespace-nowrap tabular-nums',
         size === 'md' ? 'px-2.5 py-1 text-xs' : 'px-2 py-0.5 text-xs leading-4',
         toneClass,
         className,
@@ -80,48 +80,47 @@ export function ScorecardPostureMeter({
   const filledSegments = safeScore === null ? 0 : Math.round(safeScore);
   const activeSegmentClass =
     safeScore === null
-      ? 'bg-primary-200'
+      ? 'bg-[#DEDFD9]'
       : safeScore >= 8
-        ? 'bg-emerald-600'
+        ? 'bg-[#15803D]'
         : safeScore >= 5
-          ? 'bg-amber-500'
-          : 'bg-rose-600';
+          ? 'bg-[#ECC147]'
+          : 'bg-[#EF1E28]';
 
-  const displayScore =
-    safeScore === null ? '—' : safeScore.toFixed(1);
+  const displayScore = safeScore === null ? '—' : safeScore.toFixed(1);
 
   return (
     <div
       id="scorecard-posture-meter"
       className={cn(
-        'rounded-xl border border-primary-200 bg-surface p-5 shadow-2xs tabular-nums',
+        'rounded-2xl border border-[#E6E7E5] bg-white p-5 tabular-nums',
         className,
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <div className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-primary-500">
-            <ScorecardPostureIcon size={14} />
+          <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-[#6E706D]">
+            <ScorecardPostureIcon size={14} className="text-[#15803D]" />
             <span>Supply-Chain &amp; CI Workflow Posture</span>
           </div>
           <div className="flex items-baseline gap-2.5">
-            <span className="text-3xl font-semibold tracking-tight text-ink">{displayScore}</span>
-            <span className="text-sm font-medium text-primary-500">/ 10.0</span>
-            <span className="text-xs text-primary-600">· {repository}</span>
+            <span className="text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#141514]">
+              {displayScore}
+            </span>
+            <span className="text-sm font-medium text-[#7A7C78]">/ 10.0</span>
+            <span className="text-xs text-[#5E605D]">· {repository}</span>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           {observedRevision ? (
-            <span className="rounded-md border border-primary-200 bg-primary-50 px-2 py-0.5 font-mono text-primary-700">
-              {observedRevision.slice(0, 12)}
-            </span>
+            <span className="font-mono text-[#5E605D]">{observedRevision.slice(0, 12)}</span>
           ) : null}
           {scorecardVersion ? (
             <Badge variant="informational">nightfall-scorecard {scorecardVersion}</Badge>
           ) : null}
           {evaluatedAt ? (
-            <span className="text-primary-500">{evaluatedAt.slice(0, 19).replace('T', ' ')}Z</span>
+            <span className="text-[#7A7C78]">{evaluatedAt.slice(0, 19).replace('T', ' ')}Z</span>
           ) : null}
         </div>
       </div>
@@ -138,8 +137,8 @@ export function ScorecardPostureMeter({
           <div
             key={idx}
             className={cn(
-              'h-2.5 rounded-sm transition-colors',
-              idx < filledSegments ? activeSegmentClass : 'bg-primary-100',
+              'h-3 rounded-[4px] transition-colors',
+              idx < filledSegments ? activeSegmentClass : 'bg-[#F0F1EE]',
             )}
           />
         ))}

@@ -105,7 +105,24 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
       expect(screen.getByText('Microsoft LiteBox Library OS Sandbox')).toBeTruthy();
       expect(screen.getByText('Nightfall Scorecard Supply-Chain Engine')).toBeTruthy();
       expect(screen.getByText('daemon-http')).toBeTruthy();
+      expect(screen.getByText('Mantis Autonomous Vulnerability Pipeline')).toBeTruthy();
+      expect(screen.getByText('Preview · Integration Pipeline')).toBeTruthy();
     });
+    fireEvent.click(document.querySelector('#btn-open-mantis-pipeline-drawer')!);
+    await waitFor(() => {
+      expect(screen.getByText('Mantis 20-Stage Reference Pipeline')).toBeTruthy();
+      expect(screen.getByText('Export workflow.local.json')).toBeTruthy();
+    });
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    // Repo-scoped workspace selector + Back/Forward history router
+    const repoSelect = document.querySelector('#select-global-repo-filter') as HTMLSelectElement;
+    expect(repoSelect).toBeTruthy();
+    fireEvent.change(repoSelect, { target: { value: 'auth-gateway' } });
+    fireEvent.change(repoSelect, { target: { value: 'all' } });
+
+    fireEvent.click(document.querySelector('#btn-history-back')!);
+    fireEvent.click(document.querySelector('#btn-history-forward')!);
 
     fireEvent.click(document.querySelector('#nav-btn-new-scan')!);
     await waitFor(() => {
@@ -119,7 +136,7 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
       expect(testServer?.capturedScans[0]?.localPath).toBe('/workspace/northstar-docs');
     });
 
-    // 5. Red Team Live Campaign, Finding Report (NS-7b64c9e2), and campaign.yaml v5 builder
+    // 5. Red Team Live Campaign, Finding Report (NS-7b64c9e2), and campaign.yaml v5 builder + ScopeAuthorizationPanel
     fireEvent.click(document.querySelector('#nav-btn-red-team')!);
     await waitFor(() => {
       expect(screen.getByText('Safety monitor')).toBeTruthy();
@@ -131,7 +148,10 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
       expect(screen.getByText('Promote to Defense Factory')).toBeTruthy();
     });
     fireEvent.click(document.querySelector('#top-tab-campaign-yaml')!);
-    await waitFor(() => expect(screen.getByText('Download v5 YAML')).toBeTruthy());
+    await waitFor(() => {
+      expect(screen.getByText('Download v5 YAML')).toBeTruthy();
+      expect(screen.getByText('Cryptographic Scope Authorization (Ed25519)')).toBeTruthy();
+    });
     expect(container.innerHTML).not.toContain('NaN');
   });
 });
