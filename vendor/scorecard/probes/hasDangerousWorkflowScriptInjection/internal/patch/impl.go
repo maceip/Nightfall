@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-git/go-billy/v5/memfs"
 	"github.com/go-git/go-git/v5"
@@ -555,7 +556,13 @@ func commitWorkflow(path string, contents []byte, repo *git.Repository) (*object
 		return nil, fmt.Errorf("worktree.Add: %w", err)
 	}
 
-	hash, err := worktree.Commit("x", &git.CommitOptions{})
+	hash, err := worktree.Commit("x", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Nightfall Scorecard",
+			Email: "scorecard@nightfall.dev",
+			When:  time.Unix(0, 0).UTC(),
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("worktree.Commit: %w", err)
 	}
