@@ -237,17 +237,20 @@ export function ScorecardScreen({
             ]}
           />
           {targetType === 'local' ? (
-            <select
-              id="select-scorecard-repo"
-              value={activeRepoName}
-              onChange={(e) => onSelectRepo(e.target.value)}
-              aria-label="Select Scorecard repository"
-              className="h-9 rounded-full border border-hairline-strong bg-canvas px-3.5 text-xs font-medium text-ink outline-none"
-            >
-              {repositories.map((r) => (
-                <option key={r.id} value={r.name}>{r.name}</option>
-              ))}
-            </select>
+            <HStack gap={1.5} align="center">
+              <span className="pl-1 text-xs font-medium text-ink-muted">Scan target:</span>
+              <select
+                id="select-scorecard-repo"
+                value={activeRepoName}
+                onChange={(e) => onSelectRepo(e.target.value)}
+                aria-label="Select Scorecard repository"
+                className="h-9 rounded-full border border-hairline-strong bg-canvas px-3.5 text-xs font-medium text-ink outline-none"
+              >
+                {repositories.map((r) => (
+                  <option key={r.id} value={r.name}>{r.name}</option>
+                ))}
+              </select>
+            </HStack>
           ) : (
             <Input
               id="input-scorecard-target"

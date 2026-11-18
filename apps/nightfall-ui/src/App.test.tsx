@@ -136,11 +136,20 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
       expect(testServer?.capturedScans[0]?.localPath).toBe('/workspace/northstar-docs');
     });
 
-    // 5. Red Team Live Campaign, Finding Report (NS-7b64c9e2), and campaign.yaml v5 builder + ScopeAuthorizationPanel
+    // Verify Defense Factory views have zero leaked campaign.yaml tabs and zero segmented rail dividers
+    expect(document.querySelector('#top-tab-campaign-yaml')).toBeNull();
+    expect(document.querySelectorAll('#nightfall-product-sidebar [role="separator"]').length).toBe(0);
+    fireEvent.click(document.querySelector('#btn-toggle-sidebar')!);
+    expect(document.querySelector('#nightfall-product-sidebar')?.getAttribute('data-collapsed')).toBe('true');
+    fireEvent.click(document.querySelector('#btn-toggle-sidebar')!);
+    expect(document.querySelector('#nightfall-product-sidebar')?.getAttribute('data-collapsed')).toBe('false');
+
+    // 5. Red Team Live Campaign, Finding Report (NS-7b64c9e2), and Scope YAML builder + ScopeAuthorizationPanel
     fireEvent.click(document.querySelector('#nav-btn-red-team')!);
     await waitFor(() => {
       expect(screen.getByText('Safety monitor')).toBeTruthy();
       expect(screen.getByText('Confirmed cross-tenant finding')).toBeTruthy();
+      expect(document.querySelector('#select-global-repo-filter')).toBeNull();
     });
     fireEvent.click(document.querySelector('#rt-finding-row-SEC-1034')!);
     await waitFor(() => {

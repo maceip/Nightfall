@@ -6,12 +6,13 @@ import {
   CodeIcon,
   FolderIcon,
   GridIcon,
+  NightfallHorizonIcon,
   PlusIcon,
+  RedTeamSparkIcon,
   ScanIcon,
   ScorecardPostureIcon,
   ScorecardScorePill,
   SettingsIcon,
-  ShieldCheckIcon,
   SidebarLeftIcon,
   cn,
 } from '@nightfall/ui-kit';
@@ -19,6 +20,8 @@ import type { PrimarySection, RedTeamStage } from '../hooks/use-nightfall-router
 
 export type ProductSidebarProps = {
   section: PrimarySection;
+  collapsed: boolean;
+  leftInsetPx?: number;
   proposedFixesCount: number;
   openFindingsCount: number;
   averageScorecardScore?: number | null;
@@ -33,6 +36,8 @@ function safeCount(raw: number): number {
 
 export function ProductSidebar({
   section,
+  collapsed,
+  leftInsetPx = 0,
   proposedFixesCount,
   openFindingsCount,
   averageScorecardScore,
@@ -42,34 +47,102 @@ export function ProductSidebar({
 }: ProductSidebarProps): React.ReactElement {
   const cleanFixes = safeCount(proposedFixesCount);
   const cleanFindings = safeCount(openFindingsCount);
+  const isRedTeam = section === 'red-team';
   const hasValidScorecard =
     averageScorecardScore !== null &&
     averageScorecardScore !== undefined &&
     Number.isFinite(averageScorecardScore);
 
+  const headerStyle: React.CSSProperties | undefined = leftInsetPx
+    ? { paddingLeft: `${leftInsetPx}px` }
+    : undefined;
+
   return (
     <nav
       id="nightfall-product-sidebar"
       aria-label="Nightfall navigation"
-      className="flex w-56 shrink-0 flex-col justify-between border-r border-hairline bg-sidebar px-2.5 py-3 select-none"
+      data-collapsed={collapsed ? 'true' : 'false'}
+      className={cn(
+        'flex shrink-0 flex-col justify-between border-r border-hairline bg-sidebar select-none transition-[width] duration-150',
+        collapsed ? 'w-14 px-2 py-2.5' : 'w-[236px] px-3 py-2.5',
+      )}
     >
-      <VStack gap={0}>
-        <HStack align="center" justify="between" className="mb-2.5 px-2">
-          <span className="text-[15px] font-semibold tracking-tight text-ink">Nightfall</span>
+      <VStack gap={3}>
+        <header
+          style={headerStyle}
+          className={cn(
+            'wc-drag flex h-8 items-center',
+            collapsed ? 'justify-center' : 'justify-between px-1.5',
+          )}
+        >
+          {!collapsed ? (
+            <HStack gap={2} align="center">
+              <NightfallHorizonIcon size={17} className="text-ink" />
+              <span className="text-[15px] font-semibold tracking-tight text-ink">Nightfall</span>
+            </HStack>
+          ) : null}
           <button
             type="button"
-            title="Collapse sidebar"
-            aria-label="Collapse sidebar"
+            id="btn-toggle-sidebar"
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={onToggleSidebar}
-            className="inline-flex size-7 items-center justify-center rounded-lg text-ink-secondary transition-colors hover:bg-pill/70 hover:text-ink cursor-pointer"
+            className="wc-no-drag inline-flex size-7 items-center justify-center rounded-lg text-ink-secondary transition-colors hover:bg-pill/70 hover:text-ink cursor-pointer"
           >
             <SidebarLeftIcon size={15} />
           </button>
-        </HStack>
+        </header>
+
+        <div
+          role="tablist"
+          aria-label="Nightfall product mode"
+          className={cn(
+            'wc-no-drag rounded-xl border border-hairline bg-canvas p-0.5',
+            collapsed ? 'flex flex-col gap-0.5' : 'grid grid-cols-2 gap-0.5',
+          )}
+        >
+          <button
+            type="button"
+            role="tab"
+            id="nav-btn-defense"
+            aria-selected={!isRedTeam}
+            title="Defense Factory"
+            onClick={() => {
+              if (isRedTeam) onNavigate('findings');
+            }}
+            className={cn(
+              'inline-flex h-7 items-center justify-center gap-1.5 rounded-[9px] px-2 text-[12px] font-medium whitespace-nowrap transition-colors cursor-pointer',
+              !isRedTeam
+                ? 'bg-pill text-ink shadow-2xs'
+                : 'text-ink-secondary hover:text-ink',
+            )}
+          >
+            <NightfallHorizonIcon size={13} />
+            {!collapsed ? <span>Defense</span> : null}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="nav-btn-red-team"
+            aria-selected={isRedTeam}
+            title="Red Team Assessment"
+            onClick={() => onNavigate('red-team', 'live-campaign')}
+            className={cn(
+              'inline-flex h-7 items-center justify-center gap-1.5 rounded-[9px] px-2 text-[12px] font-medium whitespace-nowrap transition-colors cursor-pointer',
+              isRedTeam
+                ? 'bg-pill text-ink shadow-2xs'
+                : 'text-ink-secondary hover:text-ink',
+            )}
+          >
+            <RedTeamSparkIcon size={13} />
+            {!collapsed ? <span>Red Team</span> : null}
+          </button>
+        </div>
 
         <div className="space-y-0.5 tabular-nums">
           <SidebarNavItem
             id="nav-btn-new-scan"
+            collapsed={collapsed}
             active={false}
             icon={<PlusIcon size={15} />}
             label="New scan"
@@ -77,6 +150,7 @@ export function ProductSidebar({
           />
           <SidebarNavItem
             id="nav-btn-overview"
+            collapsed={collapsed}
             active={section === 'overview'}
             icon={<GridIcon size={15} />}
             label="Overview"
@@ -84,6 +158,7 @@ export function ProductSidebar({
           />
           <SidebarNavItem
             id="nav-btn-fixes"
+            collapsed={collapsed}
             active={section === 'fixes'}
             icon={<CodeIcon size={15} />}
             label="Fixes"
@@ -102,6 +177,7 @@ export function ProductSidebar({
           />
           <SidebarNavItem
             id="nav-btn-findings"
+            collapsed={collapsed}
             active={section === 'findings' || section === 'finding-detail'}
             icon={<BulletListIcon size={15} />}
             label="Findings"
@@ -114,6 +190,7 @@ export function ProductSidebar({
           />
           <SidebarNavItem
             id="nav-btn-repositories"
+            collapsed={collapsed}
             active={section === 'repositories'}
             icon={<FolderIcon size={15} />}
             label="Repositories"
@@ -121,6 +198,7 @@ export function ProductSidebar({
           />
           <SidebarNavItem
             id="nav-btn-scorecard"
+            collapsed={collapsed}
             active={section === 'scorecard'}
             icon={<ScorecardPostureIcon size={15} />}
             label="Scorecard"
@@ -131,29 +209,18 @@ export function ProductSidebar({
           />
           <SidebarNavItem
             id="nav-btn-scans"
+            collapsed={collapsed}
             active={section === 'scans'}
             icon={<ScanIcon size={15} />}
             label="Scans"
             onClick={() => onNavigate('scans')}
-          />
-          <div className="my-2 h-px bg-hairline" role="separator" />
-          <SidebarNavItem
-            id="nav-btn-red-team"
-            active={section === 'red-team'}
-            icon={<ShieldCheckIcon size={15} />}
-            label="Red Team"
-            trailing={
-              <span className="rounded-full bg-accent-violet-soft px-2 py-0.5 text-[11px] leading-4 font-medium text-accent-violet">
-                New
-              </span>
-            }
-            onClick={() => onNavigate('red-team', 'live-campaign')}
           />
         </div>
       </VStack>
 
       <SidebarNavItem
         id="nav-btn-settings"
+        collapsed={collapsed}
         active={section === 'settings'}
         icon={<SettingsIcon size={15} />}
         label="Settings"
@@ -165,6 +232,7 @@ export function ProductSidebar({
 
 function SidebarNavItem({
   id,
+  collapsed,
   active,
   icon,
   label,
@@ -172,6 +240,7 @@ function SidebarNavItem({
   onClick,
 }: {
   id: string;
+  collapsed: boolean;
   active: boolean;
   icon: React.ReactNode;
   label: string;
@@ -182,19 +251,20 @@ function SidebarNavItem({
     <button
       type="button"
       id={id}
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
       onClick={onClick}
       className={cn(
-        'flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-colors cursor-pointer',
-        active
-          ? 'bg-pill text-ink'
-          : 'text-ink-secondary hover:bg-pill/60 hover:text-ink',
+        'wc-no-drag flex w-full items-center rounded-lg py-1.5 text-[13px] font-medium transition-colors cursor-pointer',
+        collapsed ? 'justify-center px-0' : 'justify-between px-2.5',
+        active ? 'bg-pill text-ink' : 'text-ink-secondary hover:bg-pill/60 hover:text-ink',
       )}
     >
       <span className="inline-flex items-center gap-2">
         {icon}
-        <span>{label}</span>
+        {!collapsed ? <span>{label}</span> : null}
       </span>
-      {trailing}
+      {!collapsed ? trailing : null}
     </button>
   );
 }
