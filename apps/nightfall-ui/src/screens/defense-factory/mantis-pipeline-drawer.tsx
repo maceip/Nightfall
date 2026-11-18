@@ -31,6 +31,7 @@ import {
   DrawerContent,
   MantisClawIcon,
   SegmentedControl,
+  StatusBadge,
   TerminalIcon,
 } from '@nightfall/ui-kit';
 
@@ -129,7 +130,7 @@ export function MantisPipelineDrawer({
             <HStack gap={2} align="center" wrap="wrap">
               <MantisClawIcon size={17} className="text-accent-violet" />
               <DialogTitle>Mantis 20-Stage Reference Pipeline</DialogTitle>
-              <Badge variant="preview">Preview · Integration Pipeline</Badge>
+              <StatusBadge status="verified" label="Integrated · 20-Stage DAG" />
             </HStack>
             <DialogDescription>
               Upstream specification: <span className="font-mono">{MANTIS_UPSTREAM_REPO}</span>

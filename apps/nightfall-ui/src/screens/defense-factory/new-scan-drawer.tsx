@@ -251,7 +251,11 @@ export function NewScanDrawer({
               }
             }}
           >
-            Start scan
+            {submitting
+              ? method === 'mantis_scan'
+                ? 'Running Mantis 20-stage review…'
+                : 'Running scan…'
+              : 'Start scan'}
           </Button>
         </div>
       </DrawerContent>
