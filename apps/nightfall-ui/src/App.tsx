@@ -168,6 +168,7 @@ export function App(): React.ReactElement {
                   overview={scoped.overview}
                   fixes={scoped.fixes}
                   scorecardReports={data.scorecardReports}
+                  mantisToolchain={data.mantisToolchain}
                   onNavigateFindings={(sev) => {
                     setSelectedSeverity(sev ?? null);
                     navigateTo('findings');
@@ -224,6 +225,7 @@ export function App(): React.ReactElement {
                 <SettingsScreen
                   sandboxToolchain={data.sandboxToolchain}
                   scorecardToolchain={data.scorecardToolchain}
+                  mantisToolchain={data.mantisToolchain}
                   models={data.models}
                   auditEntryCount={data.auditEntries.length}
                   killSwitchEngaged={data.killSwitchEngaged}

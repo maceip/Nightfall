@@ -177,7 +177,7 @@ describe('@nightfall/core-contracts campaign.yaml v5 & signing', () => {
         handoff_targets: { red_team_live_staging: boolean; defense_factory_patch_queue: boolean };
       };
     };
-    expect(parsed.nightfall_bridge.integration_state).toBe('preview-pipeline');
+    expect(parsed.nightfall_bridge.integration_state).toBe('integrated-engine');
     expect(parsed.nightfall_bridge.numeric_depth).toBe(85);
     expect(parsed.nightfall_bridge.handoff_targets.red_team_live_staging).toBe(true);
     expect(parsed.nightfall_bridge.handoff_targets.defense_factory_patch_queue).toBe(true);

@@ -42,6 +42,7 @@ import {
   type ScorecardReportRecord,
   type ScorecardScanRequest,
   type ScorecardToolchainStatus,
+  type MantisToolchainStatus,
   type Severity,
   type StreamEvent,
 } from '@nightfall/core-contracts';
@@ -61,8 +62,10 @@ import {
 import {
   DefenseFactoryEngine,
   GitPatchPackager,
+  MantisScanner,
   RepositoryScanner,
   RootCauseDeduplicator,
+  type MantisExportInput,
   type ProposeFixOptions,
 } from '@nightfall/defense-factory';
 import {
@@ -178,6 +181,7 @@ export interface BootstrapPayload {
   killSwitchEngaged: boolean;
   sandboxToolchain: SandboxToolchainStatus;
   scorecardToolchain: ScorecardToolchainStatus;
+  mantisToolchain: MantisToolchainStatus;
 }
 
 interface KillSwitchMeta {
@@ -196,6 +200,7 @@ export class NightfallOrchestrator {
   readonly redTeam: RedTeamEngine;
   readonly defenseFactory: DefenseFactoryEngine;
   readonly repositoryScanner: RepositoryScanner;
+  readonly mantisScanner: MantisScanner;
   readonly gitPackager: GitPatchPackager;
   readonly deduplicator: RootCauseDeduplicator;
   readonly scorecardService: ScorecardService;
@@ -267,6 +272,9 @@ export class NightfallOrchestrator {
       sandboxRuntime: this.sandboxRuntime,
       deduplicator: this.deduplicator,
       workspaceReposRoot: this.workspaceReposRoot,
+    });
+    this.mantisScanner = new MantisScanner({
+      deduplicator: this.deduplicator,
     });
     this.scorecardService = new ScorecardService({
       policyGate: this.policyGate,
@@ -875,6 +883,59 @@ export class NightfallOrchestrator {
       killSwitchEngaged: this.policyGate.isKillSwitchEngaged(),
       sandboxToolchain: this.sandboxRuntime.getToolchainStatus(),
       scorecardToolchain: this.scorecardService.getToolchainStatus(),
+      mantisToolchain: this.mantisScanner.getToolchainStatus(),
+    };
+  }
+
+  async exportMantisRun(input: MantisExportInput): Promise<{
+    findingsDiscovered: number;
+    findings: FindingRecord[];
+    overview: OverviewSummary;
+  }> {
+    const exported = await this.mantisScanner.exportRun(input);
+    const existingFindings = this.store.listFindings();
+    const openByCluster = new Map<string, FindingRecord>();
+    for (const existing of existingFindings) {
+      if (existing.status !== 'fixed' && existing.status !== 'discarded_fp') {
+        openByCluster.set(existing.rootCauseClusterKey, existing);
+      }
+    }
+
+    for (const candidate of exported) {
+      const openMatch = openByCluster.get(candidate.rootCauseClusterKey);
+      if (openMatch) {
+        const refreshed = FindingRecordSchema.parse({
+          ...openMatch,
+          observedRevision: input.observedRevision,
+          updatedAt: new Date().toISOString(),
+        });
+        this.store.upsertFinding(refreshed);
+        this.emit({ type: 'finding.updated', finding: refreshed });
+      } else {
+        this.store.upsertFinding(candidate, 'front');
+        openByCluster.set(candidate.rootCauseClusterKey, candidate);
+        this.emit({ type: 'finding.updated', finding: candidate });
+      }
+    }
+
+    this.auditLedger.append({
+      subsystem: 'defense-factory',
+      action: 'mantis.run_exported',
+      entityId: input.runId ?? repoShortName(input.repository),
+      actor: 'mantis-engine',
+      summary: `Imported ${exported.length} finding(s) from Mantis run for ${repoShortName(input.repository)}@${input.observedRevision}.`,
+      metadata: {
+        repository: repoShortName(input.repository),
+        observedRevision: input.observedRevision,
+        runId: input.runId ?? null,
+        findingsDiscovered: exported.length,
+      },
+    });
+
+    return {
+      findingsDiscovered: exported.length,
+      findings: this.store.listFindings(),
+      overview: this.computeOverview(),
     };
   }
 
@@ -1071,6 +1132,118 @@ export class NightfallOrchestrator {
         scan,
         overview: scRes.overview,
         findings: scRes.findings,
+      };
+    }
+
+    if (req.method === 'mantis_scan') {
+      const effectiveRepo = matchedRepo?.name ?? shortRepo;
+      let targetLocalPath = req.localPath ?? matchedRepo?.localPath;
+      const cloneUrl = req.cloneUrl ?? matchedRepo?.cloneUrl;
+
+      if (!targetLocalPath && cloneUrl) {
+        await fs.mkdir(this.workspaceReposRoot, { recursive: true });
+        const destDir = path.join(this.workspaceReposRoot, effectiveRepo);
+        try {
+          const st = await fs.stat(destDir);
+          if (!st.isDirectory()) {
+            throw new Error('not-dir');
+          }
+        } catch {
+          await execFileAsync('git', ['clone', '--depth', '1', cloneUrl, destDir], {
+            timeout: 120_000,
+          });
+        }
+        targetLocalPath = destDir;
+      }
+
+      if (!targetLocalPath) {
+        throw new Error(
+          `Local workspace path or Git clone URL is required to run Mantis scan on "${effectiveRepo}".`,
+        );
+      }
+
+      const mantisRes = await this.mantisScanner.scanRepository({
+        repository: effectiveRepo,
+        localPath: targetLocalPath,
+        sandbox: 'static-only',
+      });
+
+      const openByCluster = new Map<string, FindingRecord>();
+      for (const existing of this.store.listFindings()) {
+        if (existing.status !== 'fixed' && existing.status !== 'discarded_fp') {
+          openByCluster.set(existing.rootCauseClusterKey, existing);
+        }
+      }
+      for (const candidate of mantisRes.findings) {
+        const openMatch = openByCluster.get(candidate.rootCauseClusterKey);
+        if (openMatch) {
+          const refreshed = FindingRecordSchema.parse({
+            ...openMatch,
+            observedRevision: mantisRes.observedRevision,
+            updatedAt: new Date().toISOString(),
+          });
+          this.store.upsertFinding(refreshed);
+          this.emit({ type: 'finding.updated', finding: refreshed });
+        } else {
+          this.store.upsertFinding(candidate, 'front');
+          openByCluster.set(candidate.rootCauseClusterKey, candidate);
+          this.emit({ type: 'finding.updated', finding: candidate });
+        }
+      }
+
+      const allFindings = this.store.listFindings();
+      const repoOpenCount = allFindings.filter(
+        (f) =>
+          repoShortName(f.repository) === mantisRes.repository &&
+          f.status !== 'fixed' &&
+          f.status !== 'discarded_fp',
+      ).length;
+
+      if (matchedRepo) {
+        this.store.upsertRepository(
+          RepositoryRecordSchema.parse({
+            ...matchedRepo,
+            lastCompletedScanLabel: 'Just now',
+            openFindingsCount: repoOpenCount,
+            needsAttention: !matchedRepo.prReviewsEnabled || repoOpenCount >= 3,
+          }),
+          'back',
+        );
+      }
+
+      const completedAt = new Date().toISOString();
+      const scan = ScanJobRecordSchema.parse({
+        id: scanId,
+        repository: mantisRes.repository,
+        mode: req.mode,
+        method: 'mantis_scan',
+        scope: req.scope,
+        status: 'completed',
+        findingsDiscovered: mantisRes.findings.length,
+        startedAt,
+        completedAt,
+      });
+      this.store.upsertScan(scan, 'front');
+
+      this.auditLedger.append({
+        subsystem: 'defense-factory',
+        action: 'mantis.repository_scanned',
+        entityId: scan.id,
+        actor: 'mantis-engine',
+        summary: `Completed Mantis static-only review on ${mantisRes.repository}@${mantisRes.observedRevision} (${mantisRes.findings.length} finding(s)).`,
+        metadata: {
+          repository: mantisRes.repository,
+          observedRevision: mantisRes.observedRevision,
+          runId: mantisRes.runId,
+          mantisExitCode: mantisRes.mantisExitCode,
+        },
+      });
+      this.emit({ type: 'scan.updated', scan });
+
+      return {
+        scan,
+        overview: this.computeOverview(),
+        findings: this.store.listFindings(),
       };
     }
 

@@ -6,10 +6,14 @@ import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FindingRecordSchema } from '@nightfall/core-contracts';
 import { RootCauseDeduplicator } from './deduplicator.js';
-import { DEFAULT_MANTIS_ENGINE_DIR, MantisScanner } from './mantisScanner.js';
+import {
+  DEFAULT_MANTIS_ENGINE_DIR,
+  MantisScanner,
+  discoverMantisToolchainSync,
+} from './mantisScanner.js';
 
 const execFileAsync = promisify(execFile);
-const PYTHON = process.env.NIGHTFALL_MANTIS_PYTHON ?? 'python3';
+const PYTHON = discoverMantisToolchainSync().pythonExecutable;
 
 /** Records findings through Mantis's own database layer, as a Mantis run would. */
 async function recordMantisRun(dbPath: string): Promise<void> {

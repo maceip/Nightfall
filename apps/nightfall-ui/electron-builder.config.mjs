@@ -254,6 +254,27 @@ const optionalScorecardExtraResources = existsSync(
     ]
   : [];
 
+const optionalMantisExtraResources = existsSync(
+  resolve(workspaceRoot, 'services/mantis-engine/reference/nightfall_bridge.py'),
+)
+  ? [
+      {
+        from: '../../services/mantis-engine/reference',
+        to: 'tools/mantis/reference',
+        filter: [
+          '**/*',
+          '!.venv/**',
+          '!**/__pycache__/**',
+          '!**/*.pyc',
+          '!evals/**',
+          '!tests/**',
+          '!test_scan/**',
+          '!test_targets/**',
+        ],
+      },
+    ]
+  : [];
+
 /** @type {import('electron-builder').Configuration} */
 export default {
   appId: desktopProductIdentity.appId,
@@ -327,6 +348,7 @@ export default {
       : []),
     ...optionalLiteBoxExtraResources,
     ...optionalScorecardExtraResources,
+    ...optionalMantisExtraResources,
   ],
   mac: {
     target: ['dmg'],

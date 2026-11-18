@@ -1,20 +1,82 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { z } from 'zod';
-import { FindingRecordSchema, type FindingRecord } from '@nightfall/core-contracts';
+import {
+  FindingRecordSchema,
+  MANTIS_REFERENCE_PIPELINE_STAGES,
+  MANTIS_UPSTREAM_REPO,
+  MantisToolchainStatusSchema,
+  type FindingRecord,
+  type MantisToolchainStatus,
+} from '@nightfall/core-contracts';
 import { RootCauseDeduplicator } from './deduplicator.js';
 
 const execFileAsync = promisify(execFile);
 
 /** Where the Mantis engine lives in this monorepo (services/mantis-engine/reference). */
-export const DEFAULT_MANTIS_ENGINE_DIR = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../mantis-engine/reference',
-);
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+export function resolveDefaultMantisEngineDir(): string {
+  const candidates = [
+    process.env.NIGHTFALL_MANTIS_ENGINE_DIR,
+    path.resolve(MODULE_DIR, '../../mantis-engine/reference'),
+    path.resolve(MODULE_DIR, '../../../services/mantis-engine/reference'),
+    path.resolve(process.cwd(), 'services/mantis-engine/reference'),
+    path.resolve(process.cwd(), '../../services/mantis-engine/reference'),
+  ].filter((c): c is string => Boolean(c && c.trim()));
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (existsSync(path.join(resolved, 'nightfall_bridge.py'))) {
+      return resolved;
+    }
+  }
+  return path.resolve(MODULE_DIR, '../../mantis-engine/reference');
+}
+
+export const DEFAULT_MANTIS_ENGINE_DIR = resolveDefaultMantisEngineDir();
+
+export function resolveDefaultMantisPython(engineDir: string = DEFAULT_MANTIS_ENGINE_DIR): string {
+  if (process.env.NIGHTFALL_MANTIS_PYTHON?.trim()) {
+    return process.env.NIGHTFALL_MANTIS_PYTHON.trim();
+  }
+  const localVenvCandidates = [
+    path.join(engineDir, '.venv', 'bin', 'python'),
+    path.join(os.homedir(), '.local', 'share', 'nightfall', 'mantis-venv', 'bin', 'python'),
+  ];
+  for (const candidate of localVenvCandidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  return 'python3';
+}
+
+export function discoverMantisToolchainSync(deps?: {
+  pythonExecutable?: string;
+  engineDir?: string;
+}): MantisToolchainStatus {
+  const engineDir = path.resolve(deps?.engineDir ?? resolveDefaultMantisEngineDir());
+  const bridgeScriptPath = path.join(engineDir, 'nightfall_bridge.py');
+  const runtimeDir = path.join(engineDir, 'mantis_runtime');
+  const pythonExecutable = deps?.pythonExecutable ?? resolveDefaultMantisPython(engineDir);
+  const available = existsSync(bridgeScriptPath) && existsSync(runtimeDir);
+  return MantisToolchainStatusSchema.parse({
+    available,
+    engineDir,
+    bridgeScriptPath,
+    pythonExecutable,
+    runtimeFlavor: 'mantis_runtime',
+    sandboxMode: 'static-only',
+    upstreamRepo: MANTIS_UPSTREAM_REPO,
+    stageCount: MANTIS_REFERENCE_PIPELINE_STAGES.length,
+  });
+}
 
 const MANTIS_EXPORT_FORMAT = 'mantis-nightfall/v1';
 
@@ -112,9 +174,16 @@ export class MantisScanner {
   private readonly deduplicator: RootCauseDeduplicator;
 
   constructor(deps?: MantisScannerDeps) {
-    this.python = deps?.pythonExecutable ?? process.env.NIGHTFALL_MANTIS_PYTHON ?? 'python3';
-    this.engineDir = deps?.engineDir ?? DEFAULT_MANTIS_ENGINE_DIR;
+    this.engineDir = deps?.engineDir ?? resolveDefaultMantisEngineDir();
+    this.python = deps?.pythonExecutable ?? resolveDefaultMantisPython(this.engineDir);
     this.deduplicator = deps?.deduplicator ?? new RootCauseDeduplicator();
+  }
+
+  getToolchainStatus(): MantisToolchainStatus {
+    return discoverMantisToolchainSync({
+      pythonExecutable: this.python,
+      engineDir: this.engineDir,
+    });
   }
 
   /** Reads one recorded Mantis run (the latest when runId is omitted). */

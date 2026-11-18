@@ -111,14 +111,19 @@ jobs:
           "$RUNNER_TEMP/mantis-venv/bin/pip" install --require-hashes -r services/mantis-engine/reference/requirements.txt
           echo "NIGHTFALL_MANTIS_PYTHON=$RUNNER_TEMP/mantis-venv/bin/python" >> "$GITHUB_ENV"
 
+      - name: Verify Mantis runtime & Nightfall Python bridge suites
+        run: |
+          "$NIGHTFALL_MANTIS_PYTHON" -m unittest discover -s services/mantis-engine/reference/tests -p "test_adk_invariants.py"
+          "$NIGHTFALL_MANTIS_PYTHON" -m unittest discover -s services/mantis-engine/reference/tests -p "test_nightfall_bridge.py"
+
       - name: Typecheck entire monorepo
         run: pnpm typecheck
 
-      - name: Run unit, UI, packaging, and closed-loop E2E suites
-        run: pnpm test
-
       - name: Build renderer & zcode-aligned Electron main/preload bundles
         run: pnpm --filter @nightfall/nightfall-ui run build:desktop
+
+      - name: Run unit, UI, packaging, and closed-loop E2E suites
+        run: pnpm test
 
       - name: Audit Facebook Astryx design system bundle
         run: pnpm --filter @nightfall/nightfall-ui run astryx:doctor

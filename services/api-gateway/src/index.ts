@@ -83,6 +83,7 @@ export function createApiServer(
           killSwitchEngaged: orchestrator.policyGate.isKillSwitchEngaged(),
           sandboxToolchain: orchestrator.sandboxRuntime.getToolchainStatus(),
           scorecardToolchain: orchestrator.scorecardService.getToolchainStatus(),
+          mantisToolchain: orchestrator.mantisScanner.getToolchainStatus(),
         });
         return;
       }
@@ -146,6 +147,31 @@ export function createApiServer(
         const body = await readJsonBody(req);
         const parsedReq = ScorecardScanRequestSchema.parse(body);
         const result = await orchestrator.runScorecardScan(parsedReq);
+        sendJson(res, 200, result);
+        return;
+      }
+
+      if (method === 'POST' && pathname === '/api/mantis/export') {
+        const body = await readJsonBody(req);
+        if (
+          typeof body.repository !== 'string' ||
+          typeof body.dbPath !== 'string' ||
+          typeof body.observedRevision !== 'string'
+        ) {
+          sendJson(res, 400, {
+            error: 'Fields "repository", "dbPath", and "observedRevision" are required.',
+          });
+          return;
+        }
+        const result = await orchestrator.exportMantisRun({
+          repository: body.repository,
+          dbPath: body.dbPath,
+          observedRevision: body.observedRevision,
+          ...(typeof body.runId === 'string' && body.runId ? { runId: body.runId } : {}),
+          ...(typeof body.targetPath === 'string' && body.targetPath
+            ? { targetPath: body.targetPath }
+            : {}),
+        });
         sendJson(res, 200, result);
         return;
       }

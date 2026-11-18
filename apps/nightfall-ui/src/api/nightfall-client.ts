@@ -4,6 +4,7 @@ import type {
   FindingRecord,
   FixProposal,
   HitlApprovalRequest,
+  MantisToolchainStatus,
   ModelDescriptor,
   NewScanRequest,
   OverviewSummary,
@@ -41,6 +42,7 @@ export type NightfallBootstrapPayload = {
   killSwitchEngaged: boolean;
   sandboxToolchain?: SandboxToolchainStatus;
   scorecardToolchain?: ScorecardToolchainStatus;
+  mantisToolchain?: MantisToolchainStatus;
   safetyMonitor?: SafetyMonitorSummary;
 };
 

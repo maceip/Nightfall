@@ -27,17 +27,20 @@ describe('@nightfall/api-gateway HTTP + SSE server', () => {
     expect(optRes.status).toBe(204);
     expect(optRes.headers.get('access-control-allow-origin')).toBe('*');
 
-    // GET /api/health exposes sandboxToolchain and scorecardToolchain
+    // GET /api/health exposes sandboxToolchain, scorecardToolchain, and mantisToolchain
     const healthRes = await fetch(`${baseUrl}/api/health`);
     expect(healthRes.status).toBe(200);
     const healthJson = (await healthRes.json()) as {
       status: string;
       sandboxToolchain: { available: boolean; southPlatform: string };
       scorecardToolchain: { available: boolean; version: string | null };
+      mantisToolchain: { available: boolean; runtimeFlavor: string };
     };
     expect(healthJson.status).toBe('ok');
     expect(healthJson.sandboxToolchain.available).toBe(true);
     expect(healthJson.scorecardToolchain.available).toBe(true);
+    expect(healthJson.mantisToolchain.available).toBe(true);
+    expect(healthJson.mantisToolchain.runtimeFlavor).toBe('mantis_runtime');
 
     // GET /api/bootstrap awaits ensureBootstrapped() automatically
     const bootRes = await fetch(`${baseUrl}/api/bootstrap`);
@@ -51,12 +54,15 @@ describe('@nightfall/api-gateway HTTP + SSE server', () => {
       models: unknown[];
       sandboxToolchain: { available: boolean };
       scorecardToolchain: { available: boolean };
+      mantisToolchain: { available: boolean; stageCount: number };
     };
     expect(bootJson.overview.openFindingsCount).toBeGreaterThanOrEqual(8);
     expect(bootJson.findings.length).toBe(bootJson.overview.openFindingsCount);
     expect(bootJson.fixes.some((fx) => fx.sandboxBackend === 'microsoft-litebox')).toBe(true);
     expect(bootJson.sandboxToolchain.available).toBe(true);
     expect(bootJson.scorecardToolchain.available).toBe(true);
+    expect(bootJson.mantisToolchain.available).toBe(true);
+    expect(bootJson.mantisToolchain.stageCount).toBe(20);
     expect(bootJson.scorecardReports.length).toBe(5);
     expect(bootJson.models.length).toBe(4);
 

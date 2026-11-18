@@ -24,8 +24,21 @@ export type MantisGateVerdict = z.infer<typeof MantisGateVerdictSchema>;
 export const MantisIntegrationStateSchema = z.enum([
   'preview-pipeline',
   'local-checkout-detected',
+  'integrated-engine',
 ]);
 export type MantisIntegrationState = z.infer<typeof MantisIntegrationStateSchema>;
+
+export const MantisToolchainStatusSchema = z.object({
+  available: z.boolean(),
+  engineDir: z.string(),
+  bridgeScriptPath: z.string(),
+  pythonExecutable: z.string(),
+  runtimeFlavor: z.literal('mantis_runtime'),
+  sandboxMode: z.literal('static-only'),
+  upstreamRepo: z.string(),
+  stageCount: z.number().int().positive(),
+});
+export type MantisToolchainStatus = z.infer<typeof MantisToolchainStatusSchema>;
 
 export const MantisStageDescriptorSchema = z.object({
   id: z.string().min(1),
@@ -147,7 +160,7 @@ export function buildMantisWorkflowLocalJson(rawOpts: MantisWorkflowExportOption
     name: 'mantis_vulnerability_pipeline',
     upstream: MANTIS_UPSTREAM_REPO,
     nightfall_bridge: {
-      integration_state: 'preview-pipeline',
+      integration_state: 'integrated-engine',
       repository: opts.repository,
       depth_tier: opts.tier,
       numeric_depth: preset.numericDepth,

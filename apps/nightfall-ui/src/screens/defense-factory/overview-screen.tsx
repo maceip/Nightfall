@@ -4,12 +4,12 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { VStack } from '@astryxdesign/core/VStack';
 import type {
   FixProposal,
+  MantisToolchainStatus,
   OverviewSummary,
   ScorecardReportRecord,
   Severity,
 } from '@nightfall/core-contracts';
 import {
-  Badge,
   Button,
   ChevronRightIcon,
   ConnectedKpiStrip,
@@ -27,6 +27,7 @@ export type OverviewScreenProps = {
   overview: OverviewSummary;
   fixes: FixProposal[];
   scorecardReports?: ScorecardReportRecord[];
+  mantisToolchain?: MantisToolchainStatus;
   onNavigateFindings: (severity?: Severity | null) => void;
   onNavigateFixes: () => void;
   onSelectFix: (fix: FixProposal) => void;
@@ -38,6 +39,7 @@ export function OverviewScreen({
   overview,
   fixes,
   scorecardReports,
+  mantisToolchain,
   onNavigateFindings,
   onNavigateFixes,
   onSelectFix,
@@ -240,8 +242,11 @@ export function OverviewScreen({
           <HStack gap={2} align="center" wrap="wrap">
             <MantisClawIcon size={16} className="text-accent-violet" />
             <span className="text-[13px] font-semibold text-ink">Mantis Pipeline</span>
-            <Code size="inherit">maceip/mantis</Code>
-            <Badge variant="preview">Preview · 20-stage DAG</Badge>
+            <Code size="inherit">services/mantis-engine</Code>
+            <StatusBadge
+              status={mantisToolchain?.available !== false ? 'verified' : 'not_recorded'}
+              label={mantisToolchain?.available !== false ? 'Integrated · 20-stage DAG' : 'Engine Unavailable'}
+            />
           </HStack>
           <ChevronRightIcon size={15} className="text-ink-muted" />
         </button>

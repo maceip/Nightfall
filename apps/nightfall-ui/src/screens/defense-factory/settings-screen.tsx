@@ -4,6 +4,7 @@ import { HStack } from '@astryxdesign/core/HStack';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
 import { Token } from '@astryxdesign/core/Token';
 import type {
+  MantisToolchainStatus,
   ModelDescriptor,
   RepositoryRecord,
   SandboxToolchainStatus,
@@ -24,6 +25,7 @@ import { MantisIntegrationCard } from './mantis-integration-card.js';
 export type SettingsScreenProps = {
   sandboxToolchain?: SandboxToolchainStatus;
   scorecardToolchain?: ScorecardToolchainStatus;
+  mantisToolchain?: MantisToolchainStatus;
   models: ModelDescriptor[];
   auditEntryCount: number;
   killSwitchEngaged: boolean;
@@ -38,6 +40,7 @@ export type SettingsScreenProps = {
 export function SettingsScreen({
   sandboxToolchain,
   scorecardToolchain,
+  mantisToolchain,
   models,
   auditEntryCount,
   killSwitchEngaged,
@@ -120,7 +123,11 @@ export function SettingsScreen({
         </HStack>
       </Card>
 
-      <MantisIntegrationCard repositories={repositories} selectedRepo={selectedRepo} />
+      <MantisIntegrationCard
+        mantisToolchain={mantisToolchain}
+        repositories={repositories}
+        selectedRepo={selectedRepo}
+      />
 
       <Card className="space-y-4 border-hairline bg-canvas p-5">
         <SectionHeader

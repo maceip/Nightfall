@@ -46,8 +46,12 @@ const SCAN_METHODS: ReadonlyArray<{
   {
     value: 'scorecard_scan',
     title: 'Supply-chain & Scorecard posture',
-    subtitle:
-      'Evaluate CI workflow permissions, pinned actions, binary artifacts, and supply-chain checks.',
+    subtitle: 'Evaluate CI workflow permissions, pinned actions, binary artifacts, and supply-chain checks.',
+  },
+  {
+    value: 'mantis_scan',
+    title: 'Mantis autonomous deep review',
+    subtitle: 'Run the 20-stage Mantis LLM security review pipeline (static-only) over repository code.',
   },
 ];
 
@@ -79,9 +83,7 @@ export function NewScanDrawer({
 
   function handleSelectLocalMode(): void {
     setMode('local');
-    if (!localPath.trim()) {
-      setLocalPath(resolveFallbackLocalPath(repository));
-    }
+    if (!localPath.trim()) setLocalPath(resolveFallbackLocalPath(repository));
   }
 
   async function handleBrowseLocalDirectory(): Promise<void> {
@@ -95,17 +97,8 @@ export function NewScanDrawer({
   }
 
   return (
-    <DialogRoot
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) onClose();
-      }}
-    >
-      <DrawerContent
-        floating
-        className="w-[min(520px,calc(100vw-24px))]"
-        aria-label="New scan"
-      >
+    <DialogRoot open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DrawerContent floating className="w-[min(520px,calc(100vw-24px))]" aria-label="New scan">
         <div className="flex items-start justify-between gap-3 border-b border-hairline bg-canvas px-5 py-4">
           <div>
             <DialogTitle>New scan</DialogTitle>
@@ -121,13 +114,7 @@ export function NewScanDrawer({
         <div className="flex-1 space-y-5 overflow-y-auto bg-canvas px-5 py-4">
           <SegmentedControl
             value={mode}
-            onChange={(next) => {
-              if (next === 'local') {
-                handleSelectLocalMode();
-              } else {
-                setMode('cloud');
-              }
-            }}
+            onChange={(next) => (next === 'local' ? handleSelectLocalMode() : setMode('cloud'))}
             options={[
               {
                 id: 'btn-scan-mode-cloud',
@@ -139,11 +126,7 @@ export function NewScanDrawer({
                   </span>
                 ),
               },
-              {
-                id: 'btn-scan-mode-local',
-                value: 'local',
-                label: 'Local',
-              },
+              { id: 'btn-scan-mode-local', value: 'local', label: 'Local' },
             ]}
           />
 

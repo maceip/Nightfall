@@ -7,18 +7,20 @@ import {
   MANTIS_DEPTH_TIER_PRESETS,
   MANTIS_REFERENCE_PIPELINE_STAGES,
   MANTIS_UPSTREAM_REPO,
+  type MantisToolchainStatus,
   type RepositoryRecord,
 } from '@nightfall/core-contracts';
 import {
-  Badge,
   Button,
   Card,
   MantisClawIcon,
   SectionHeader,
+  StatusBadge,
 } from '@nightfall/ui-kit';
 import { MantisPipelineDrawer } from './mantis-pipeline-drawer.js';
 
 export type MantisIntegrationCardProps = {
+  mantisToolchain?: MantisToolchainStatus;
   repositories?: RepositoryRecord[];
   selectedRepo?: string;
 };
@@ -70,10 +72,12 @@ const FUSED_SEAMS: ReadonlyArray<{
 ];
 
 export function MantisIntegrationCard({
+  mantisToolchain,
   repositories,
   selectedRepo,
 }: MantisIntegrationCardProps): React.ReactElement {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const mantisAvailable = mantisToolchain?.available ?? true;
 
   return (
     <>
@@ -83,15 +87,19 @@ export function MantisIntegrationCard({
             <HStack gap={2} align="center" wrap="wrap">
               <MantisClawIcon size={17} className="text-accent-violet" />
               <span>Mantis Autonomous Vulnerability Pipeline</span>
-              <Badge variant="preview">Preview · Integration Pipeline</Badge>
+              <StatusBadge
+                status={mantisAvailable ? 'verified' : 'not_recorded'}
+                label={mantisAvailable ? 'Mantis Engine Integrated ✓' : 'Mantis Engine Unavailable'}
+              />
             </HStack>
           }
           subtitle={
             <span>
-              Fused{' '}
-              <span className="font-mono">{MANTIS_REFERENCE_PIPELINE_STAGES.length}</span>-stage
-              multi-agent graph bridge (<Code size="inherit">{MANTIS_UPSTREAM_REPO}</Code>) across{' '}
-              {MANTIS_DEPTH_TIER_PRESETS.length} depth tiers (15..100).
+              Vendored <Code size="inherit">services/mantis-engine</Code> (
+              <Code size="inherit">{mantisToolchain?.runtimeFlavor ?? 'mantis_runtime'}</Code> ·{' '}
+              <Code size="inherit">{mantisToolchain?.sandboxMode ?? 'static-only'}</Code>) running{' '}
+              <span className="font-mono">{MANTIS_REFERENCE_PIPELINE_STAGES.length}</span> stages across{' '}
+              {MANTIS_DEPTH_TIER_PRESETS.length} depth tiers (<Code size="inherit">{MANTIS_UPSTREAM_REPO}</Code>).
             </span>
           }
           actions={

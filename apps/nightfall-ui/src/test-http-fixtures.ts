@@ -211,6 +211,17 @@ export function buildContractValidatedTestState() {
     pinnedCommit: '6eb56f6a7e62d8f5d55800f54cd92ea305107d1d',
   });
 
+  const mantisToolchain = {
+    available: true,
+    engineDir: '/home/antigravity/Nightfall/services/mantis-engine/reference',
+    bridgeScriptPath: '/home/antigravity/Nightfall/services/mantis-engine/reference/nightfall_bridge.py',
+    pythonExecutable: 'python3',
+    runtimeFlavor: 'mantis_runtime' as const,
+    sandboxMode: 'static-only' as const,
+    upstreamRepo: 'https://github.com/maceip/mantis',
+    stageCount: 20,
+  };
+
   return {
     overview, findings, fixes, scorecardReports,
     repositories: [{
@@ -231,6 +242,6 @@ export function buildContractValidatedTestState() {
       entityId: 'fix-1034', actor: 'defense-factory', summary: 'Verified Red-to-Green patch inside Microsoft LiteBox.',
       metadata: {}, prevHash: 'GENESIS', hash: 'a1b2c3d4e5f60718293a4b5c6d7e8f90',
     }],
-    killSwitchEngaged: false, sandboxToolchain, scorecardToolchain,
+    killSwitchEngaged: false, sandboxToolchain, scorecardToolchain, mantisToolchain,
   };
 }

@@ -106,7 +106,7 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
       expect(screen.getByText('Nightfall Scorecard Supply-Chain Engine')).toBeTruthy();
       expect(screen.getByText('daemon-http')).toBeTruthy();
       expect(screen.getByText('Mantis Autonomous Vulnerability Pipeline')).toBeTruthy();
-      expect(screen.getByText('Preview · Integration Pipeline')).toBeTruthy();
+      expect(screen.getByText('Mantis Engine Integrated ✓')).toBeTruthy();
     });
     fireEvent.click(document.querySelector('#btn-open-mantis-pipeline-drawer')!);
     await waitFor(() => {
@@ -128,6 +128,7 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
     await waitFor(() => {
       expect(screen.getByText('Scan method')).toBeTruthy();
       expect(screen.getByText('Supply-chain & Scorecard posture')).toBeTruthy();
+      expect(screen.getByText('Mantis autonomous deep review')).toBeTruthy();
     });
     fireEvent.click(document.querySelector('#btn-scan-mode-local')!);
     fireEvent.click(document.querySelector('#btn-submit-start-scan')!);
