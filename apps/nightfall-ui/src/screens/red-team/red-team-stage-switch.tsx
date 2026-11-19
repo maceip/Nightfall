@@ -1,5 +1,4 @@
 import React from 'react';
-import { Theme } from '@astryxdesign/core/theme';
 import type {
   EvidenceBundle,
   FindingRecord,
@@ -8,7 +7,6 @@ import type {
   RedTeamCampaignRun,
   RepositoryRecord,
 } from '@nightfall/core-contracts';
-import { nightfallTheme } from '@nightfall/ui-kit';
 import type { RedTeamStage } from '../../components/three-column-shell.js';
 import { CampaignYamlScreen } from './campaign-yaml-screen.js';
 import { ComposerScreen } from './composer-screen.js';
@@ -71,7 +69,7 @@ export function RedTeamStageSwitch({
   onToggleKillSwitch,
 }: RedTeamStageSwitchProps): React.ReactElement {
   return (
-    <Theme theme={nightfallTheme}>
+    <>
       {rtStage === 'composer' ? (
         <ComposerScreen
           models={models}
@@ -124,6 +122,6 @@ export function RedTeamStageSwitch({
           />
         </div>
       ) : null}
-    </Theme>
+    </>
   );
 }

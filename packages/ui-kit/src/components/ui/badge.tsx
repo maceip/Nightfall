@@ -3,40 +3,31 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import type { Severity } from '@nightfall/core-contracts';
 import { cn } from '../../lib/utils.js';
 
-// Exact borderless rounded-[6px] pills matched to the 19 uploaded Nightfall reference screenshots:
-// - Critical: soft rose (#FAE5E5 / #9E2A2B)
-// - High: warm peach (#FAE6DC / #9A3412)
-// - Medium: warm gold (#F8EFD4 / #855A15)
-// - Low: sky tint (#DCEEFB / #1D588F)
-// - Proposed / New / Triaged / Not recorded: neutral gray (#EFEFED / #373936)
-// - In Progress: cobalt tint (#E1EFFE / #1E5AA8)
-// - Enabled / Merged / Fixed / Verified: mint green (#DCFCE7 / #166534)
-// - Lavender New tag: (#EFE6FD / #6E42C1)
 export const badgeVariants = cva(
   'inline-flex items-center gap-1 rounded-[6px] border-0 px-2 py-0.5 text-[12px] font-semibold leading-4 whitespace-nowrap tabular-nums',
   {
     variants: {
       variant: {
-        critical: 'bg-[#FAE5E5] text-[#9E2A2B]',
-        high: 'bg-[#FAE6DC] text-[#9A3412]',
-        medium: 'bg-[#F8EFD4] text-[#855A15]',
-        low: 'bg-[#DCEEFB] text-[#1D588F]',
-        informational: 'bg-[#EFEFED] text-[#4A4C49]',
-        new: 'bg-[#EFEFED] text-[#4A4C49]',
-        triaged: 'bg-[#EFEFED] text-[#4A4C49]',
-        in_progress: 'bg-[#E1EFFE] text-[#1E5AA8]',
-        proposed: 'bg-[#EFEFED] text-[#373936]',
-        merged: 'bg-[#DCFCE7] text-[#166534]',
-        suppressed: 'bg-[#EFEFED] text-[#5E605D]',
-        fixed: 'bg-[#DCFCE7] text-[#166534]',
-        discarded_fp: 'bg-[#EFEFED] text-[#5E605D]',
-        verified: 'bg-[#DCFCE7] text-[#166534]',
-        verifying: 'bg-[#F8EFD4] text-[#855A15]',
-        not_recorded: 'bg-[#EFEFED] text-[#4A4C49]',
-        enabled: 'bg-[#DCFCE7] text-[#166534]',
-        accent: 'bg-[#E1EFFE] text-[#1E5AA8]',
-        lavender: 'rounded-full bg-[#EFE6FD] px-2 py-0.5 text-[11px] text-[#6E42C1]',
-        preview: 'rounded-full bg-[#FEF3C7] px-2.5 py-0.5 text-[11px] text-[#92400E]',
+        critical: 'bg-status-danger text-status-danger-ink',
+        high: 'bg-status-peach text-status-peach-ink',
+        medium: 'bg-status-amber text-status-amber-ink',
+        low: 'bg-status-info text-status-info-ink',
+        informational: 'bg-status-neutral text-status-neutral-ink',
+        new: 'bg-status-neutral text-status-neutral-ink',
+        triaged: 'bg-status-neutral text-status-neutral-ink',
+        in_progress: 'bg-status-info text-status-info-ink',
+        proposed: 'bg-status-neutral text-status-neutral-ink',
+        merged: 'bg-status-mint text-status-mint-ink',
+        suppressed: 'bg-status-neutral text-ink-secondary',
+        fixed: 'bg-status-mint text-status-mint-ink',
+        discarded_fp: 'bg-status-neutral text-ink-secondary',
+        verified: 'bg-status-mint text-status-mint-ink',
+        verifying: 'bg-status-amber text-status-amber-ink',
+        not_recorded: 'bg-status-neutral text-status-neutral-ink',
+        enabled: 'bg-status-mint text-status-mint-ink',
+        accent: 'bg-status-info text-status-info-ink',
+        lavender: 'rounded-full bg-accent-violet-soft px-2 py-0.5 text-[11px] text-accent-violet',
+        preview: 'rounded-full bg-status-amber px-2.5 py-0.5 text-[11px] text-status-amber-ink',
       },
     },
     defaultVariants: {
@@ -116,11 +107,13 @@ export function StatusBadge({
     ? (status as BadgeVariant)
     : status === 'confirmed' || status === 'completed'
       ? 'verified'
-      : status === 'regression_detected' || status === 'failed' || status === 'halted'
-        ? 'critical'
-        : status === 'running' || status === 'leased'
-          ? 'in_progress'
-          : 'informational';
+      : status === 'awaiting_approval' || status === 'paused_hitl'
+        ? 'verifying'
+        : status === 'regression_detected' || status === 'failed' || status === 'halted'
+          ? 'critical'
+          : status === 'running' || status === 'leased'
+            ? 'in_progress'
+            : 'informational';
 
   return (
     <Badge variant={mapped} className={className}>

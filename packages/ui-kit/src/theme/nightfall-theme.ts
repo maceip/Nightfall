@@ -18,7 +18,7 @@ const nightfallSyntax = defineSyntaxTheme({
     attribute: ['#855A15', '#FDE047'],
     property: ['#9E2A2B', '#FCA5A5'],
     punctuation: ['#5E605D', '#9CA3AF'],
-    background: ['#FFFFFF', '#141514'],
+    background: ['#FFFFFF', '#111312'],
     added: ['#E6F6EC', '#14532D66'],
     removed: ['#FCEBEA', '#7F1D1D66'],
     'added-marker': ['#14532D', '#4ADE80'],
@@ -55,13 +55,14 @@ export const nightfallTheme = defineTheme({
   syntax: nightfallSyntax,
 
   tokens: {
-    // 3-tier surface contrast matching the 19 uploaded Nightfall reference screenshots:
-    // Outer L-frame (#F4F5F3) -> Sidebar (#FAFBF9) -> Crisp pure-white main canvas (#FFFFFF)
-    '--color-background-body': ['#F4F5F3', '#0E0F0E'],
-    '--color-background-surface': ['#FFFFFF', '#141514'],
-    '--color-background-card': ['#FFFFFF', '#191A19'],
-    '--color-background-popover': ['#FFFFFF', '#1D1E1D'],
-    '--color-background-muted': ['#FAFBF9', '#1D1F1D'],
+    // 3-tier stepped surface contrast:
+    // Light: #F4F5F3 body -> #FAFBF9 muted/sidebar -> #FFFFFF surface/card
+    // Dark:  #0B0C0B body -> #111312 surface -> #181B19 elevated card -> #1F2220 popover/muted
+    '--color-background-body': ['#F4F5F3', '#0B0C0B'],
+    '--color-background-surface': ['#FFFFFF', '#111312'],
+    '--color-background-card': ['#FFFFFF', '#181B19'],
+    '--color-background-popover': ['#FFFFFF', '#1F2220'],
+    '--color-background-muted': ['#FAFBF9', '#1D201E'],
 
     // Charcoal-black primary pill authority (#141514) & subtle neutral hover/active fills
     '--color-accent': ['#141514', '#F4F5F3'],
@@ -78,12 +79,12 @@ export const nightfallTheme = defineTheme({
     '--color-icon-secondary': ['#6E706D', '#A3A6A1'],
     '--color-icon-disabled': ['#9A9C99', '#5A5D58'],
 
-    // Crisp hairline borders & overlays
-    '--color-neutral': ['#1415140D', '#F4F5F314'],
-    '--color-border': ['#ECEEE9', '#262825'],
-    '--color-border-emphasized': ['#E2E3E1', '#353834'],
-    '--color-overlay-hover': ['#1415140A', '#F4F5F30D'],
-    '--color-overlay-pressed': ['#14151414', '#F4F5F31A'],
+    // Crisp hairline borders & overlays with visible dark-mode separation
+    '--color-neutral': ['#1415140D', '#F4F5F317'],
+    '--color-border': ['#ECEEE9', '#FFFFFF1A'],
+    '--color-border-emphasized': ['#E2E3E1', '#FFFFFF2B'],
+    '--color-overlay-hover': ['#1415140A', '#F4F5F312'],
+    '--color-overlay-pressed': ['#14151414', '#F4F5F31F'],
 
     // Reference-screenshot severity & semantic status colors
     '--color-error': ['#9E2A2B', '#FB7185'],

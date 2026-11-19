@@ -14,10 +14,7 @@ export function Tabs({ className, ...props }: TabsProps): React.ReactElement {
 export function TabsList({ className, ...props }: TabsListProps): React.ReactElement {
   return (
     <BaseTabs.List
-      className={cn(
-        'inline-flex items-center gap-1 border-b border-primary-200 px-6 bg-surface',
-        className,
-      )}
+      className={cn('inline-flex items-center gap-1 border-b border-hairline bg-canvas px-6', className)}
       {...props}
     />
   );
@@ -27,7 +24,7 @@ export function TabsTab({ className, ...props }: TabsTabProps): React.ReactEleme
   return (
     <BaseTabs.Tab
       className={cn(
-        'relative inline-flex items-center gap-1.5 px-3 py-2.5 text-[13px] font-medium text-primary-600 transition-colors hover:text-ink cursor-pointer outline-none border-b-2 border-transparent data-[active]:border-ink data-[active]:text-ink',
+        'relative inline-flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2.5 text-[13px] font-medium text-ink-secondary transition-colors hover:text-ink cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/40 data-[active]:border-ink data-[active]:text-ink',
         className,
       )}
       {...props}
@@ -36,10 +33,5 @@ export function TabsTab({ className, ...props }: TabsTabProps): React.ReactEleme
 }
 
 export function TabsPanel({ className, ...props }: TabsPanelProps): React.ReactElement {
-  return (
-    <BaseTabs.Panel
-      className={cn('flex-1 outline-none', className)}
-      {...props}
-    />
-  );
+  return <BaseTabs.Panel className={cn('flex-1 outline-none', className)} {...props} />;
 }

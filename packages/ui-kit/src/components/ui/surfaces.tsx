@@ -6,7 +6,10 @@ export type CardProps = React.ComponentProps<'div'>;
 export function Card({ className, ...props }: CardProps): React.ReactElement {
   return (
     <div
-      className={cn('rounded-2xl border border-hairline bg-canvas p-4 text-ink', className)}
+      className={cn(
+        'nf-elevated-surface rounded-2xl border border-hairline bg-card p-4 text-ink',
+        className,
+      )}
       {...props}
     />
   );
@@ -68,7 +71,7 @@ export function ConnectedKpiStrip({
   return (
     <div
       className={cn(
-        'grid divide-y divide-hairline rounded-2xl border border-hairline bg-canvas tabular-nums sm:divide-x sm:divide-y-0',
+        'nf-elevated-surface grid divide-y divide-hairline rounded-2xl border border-hairline bg-card tabular-nums sm:divide-x sm:divide-y-0',
         colsCls,
         className,
       )}

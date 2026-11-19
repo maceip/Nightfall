@@ -17,7 +17,7 @@ export function CollapsibleTrigger({
   return (
     <BaseCollapsible.Trigger
       className={cn(
-        'flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium text-ink transition-colors hover:bg-primary-100 cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-primary-300',
+        'flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium text-ink transition-colors hover:bg-muted cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/40',
         className,
       )}
       {...props}
@@ -31,7 +31,7 @@ export function CollapsiblePanel({
 }: CollapsiblePanelProps): React.ReactElement {
   return (
     <BaseCollapsible.Panel
-      className={cn('overflow-hidden pt-2 text-[13px] text-primary-700', className)}
+      className={cn('overflow-hidden pt-2 text-[13px] text-ink-secondary', className)}
       {...props}
     />
   );

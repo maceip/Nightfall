@@ -209,7 +209,7 @@ export function FindingDetailScreen({
         </MetadataField>
         <MetadataField label="OWNER">
           <span className="inline-flex items-center gap-2">
-            <span className="inline-flex size-6 items-center justify-center rounded-full bg-sky-100 text-[10.5px] font-semibold text-sky-800">
+            <span className="inline-flex size-6 items-center justify-center rounded-full bg-status-info text-[10.5px] font-semibold text-status-info-ink">
               {finding.owner.initials}
             </span>
             <span className="text-[13px] text-ink">{finding.owner.name}</span>

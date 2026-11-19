@@ -31,11 +31,11 @@ export type FindingsScreenProps = {
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const AVATAR_TONES = [
-  'bg-sky-100 text-sky-800',
-  'bg-violet-100 text-violet-800',
-  'bg-emerald-100 text-emerald-800',
-  'bg-amber-100 text-amber-800',
-  'bg-rose-100 text-rose-800',
+  'bg-status-info text-status-info-ink',
+  'bg-accent-violet-soft text-accent-violet',
+  'bg-status-mint text-status-mint-ink',
+  'bg-status-amber text-status-amber-ink',
+  'bg-status-danger text-status-danger-ink',
 ];
 
 function getAvatarTone(seed: string): string {
@@ -164,7 +164,7 @@ export function FindingsScreen({
             {hasRedTeam ? (
               <span
                 title="Nightfall Red Team"
-                className="inline-flex size-6 items-center justify-center rounded-full bg-sky-100 text-accent-blue ring-2 ring-canvas"
+                className="inline-flex size-6 items-center justify-center rounded-full bg-status-info text-status-info-ink ring-2 ring-canvas"
               >
                 <RedTeamSparkIcon size={12} />
               </span>

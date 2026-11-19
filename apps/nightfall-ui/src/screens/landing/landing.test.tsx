@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it } from 'vitest';
 import { setNightfallApiBaseUrl } from '../../api/nightfall-client.js';
 import { NightfallShowcaseRoot } from '../../nightfall-showcase-root.js';
+import { deriveCampaignStatus } from '../red-team/live-campaign-screen.js';
 import {
   type EphemeralTestServer,
   startContractValidatedTestServer,
@@ -135,6 +136,21 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
     await waitFor(() => {
       expect(document.querySelector('#scorecard-posture-meter')).toBeTruthy();
       expect(window.location.hash).toBe('#/scorecard');
+    });
+
+    // Dark-mode Red Team Live Campaign renders under single dark <Theme> (no nested light reset)
+    expect(
+      deriveCampaignStatus({ status: 'paused_hitl' } as never, false).label,
+    ).toBe('Awaiting approval');
+    fireEvent.click(document.querySelector('#nav-btn-red-team')!);
+    await waitFor(() => {
+      const statusPill = document.querySelector('#rt-campaign-status-pill');
+      expect(statusPill).toBeTruthy();
+      expect(document.querySelector('#btn-rt-footer-kill-switch')).toBeTruthy();
+      expect(document.querySelectorAll('[data-theme="light"]').length).toBe(0);
+      expect(
+        document.querySelectorAll('div[data-astryx-theme="nightfall"][data-theme="dark"]').length,
+      ).toBe(1);
     });
   });
 });

@@ -13,25 +13,25 @@ export type YamlCodeViewerProps = {
 function renderHighlightedYamlLine(line: string): React.ReactNode {
   const trimmed = line.trimStart();
   if (trimmed.startsWith('#')) {
-    return <span className="text-[#7A7C78]">{line}</span>;
+    return <span className="text-ink-muted">{line}</span>;
   }
 
   const keyMatch = /^(\s*-?\s*)([A-Za-z0-9_.-]+)(:)(\s*)(.*)$/.exec(line);
   if (keyMatch) {
     const [, prefix, key, colon, space, rest] = keyMatch;
     const isNumber = /^-?\d+(\.\d+)?$/.test(rest ?? '');
-    const restCls = !rest
-      ? 'text-[#141514]'
-      : isNumber
-        ? 'text-[#0550AE]'
-        : 'text-[#116329]';
+    const restStyle = !rest
+      ? undefined
+      : { color: isNumber ? 'var(--nf-syn-num)' : 'var(--nf-syn-str)' };
     return (
       <>
-        <span className="text-[#5E605D]">{prefix}</span>
-        <span className="text-[#9E2A2B]">{key}</span>
-        <span className="text-[#5E605D]">{colon}</span>
+        <span className="text-ink-secondary">{prefix}</span>
+        <span style={{ color: 'var(--nf-syn-key)' }}>{key}</span>
+        <span className="text-ink-secondary">{colon}</span>
         <span>{space}</span>
-        <span className={restCls}>{rest}</span>
+        <span className={!rest ? 'text-ink' : undefined} style={restStyle}>
+          {rest}
+        </span>
       </>
     );
   }
@@ -41,13 +41,13 @@ function renderHighlightedYamlLine(line: string): React.ReactNode {
     const [, dash, item] = listMatch;
     return (
       <>
-        <span className="text-[#5E605D]">{dash}</span>
-        <span className="text-[#116329]">{item}</span>
+        <span className="text-ink-secondary">{dash}</span>
+        <span style={{ color: 'var(--nf-syn-str)' }}>{item}</span>
       </>
     );
   }
 
-  return <span className="text-[#141514]">{line || ' '}</span>;
+  return <span className="text-ink">{line || ' '}</span>;
 }
 
 export function YamlCodeViewer({
@@ -62,10 +62,15 @@ export function YamlCodeViewer({
 
   if (editable && onChange) {
     return (
-      <div className={cn('grid grid-cols-[36px_1fr] bg-white font-mono text-[12.5px] leading-[1.65]', className)}>
+      <div
+        className={cn(
+          'grid grid-cols-[36px_1fr] bg-canvas font-mono text-[12.5px] leading-[1.65]',
+          className,
+        )}
+      >
         <div
           aria-hidden="true"
-          className="select-none py-3 pr-2 text-right text-[#A0A29F] tabular-nums"
+          className="select-none py-3 pr-2 text-right text-ink-muted tabular-nums"
         >
           {lines.map((_, idx) => (
             <div key={idx}>{idx + 1}</div>
@@ -77,31 +82,22 @@ export function YamlCodeViewer({
           onChange={(e) => onChange(e.target.value)}
           spellCheck={false}
           aria-label={ariaLabel}
-          className="min-h-[420px] w-full resize-none border-0 bg-white px-2 py-3 font-mono text-[12.5px] leading-[1.65] text-[#141514] outline-none"
+          className="min-h-[420px] w-full resize-none border-0 bg-canvas px-2 py-3 font-mono text-[12.5px] leading-[1.65] text-ink outline-none"
         />
       </div>
     );
   }
 
   return (
-    <div className={cn('relative bg-white', className)}>
+    <div className={cn('relative bg-canvas text-ink', className)}>
       <pre className="m-0 overflow-x-auto py-2 font-mono text-[12.5px] leading-[1.65] tabular-nums">
         {lines.map((line, idx) => (
           <div key={idx} className="grid grid-cols-[36px_1fr] px-2">
-            <span className="select-none pr-3 text-right text-[#A0A29F]">{idx + 1}</span>
+            <span className="select-none pr-3 text-right text-ink-muted">{idx + 1}</span>
             <code className="whitespace-pre">{renderHighlightedYamlLine(line)}</code>
           </div>
         ))}
       </pre>
-      {onChange ? (
-        <textarea
-          id={textareaId}
-          value={yamlText}
-          onChange={(e) => onChange(e.target.value)}
-          aria-label={ariaLabel}
-          className="sr-only"
-        />
-      ) : null}
     </div>
   );
 }

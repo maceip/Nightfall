@@ -231,7 +231,7 @@ export function LandingLiveHeroGrid({
               <VStack gap={3}>
                 <div
                   className={cn(
-                    'pointer-events-none h-[204px] w-full overflow-hidden rounded-xl border bg-canvas transition-all duration-200',
+                    'nf-elevated-surface pointer-events-none h-[204px] w-full overflow-hidden rounded-xl border bg-card transition-all duration-200',
                     isHovered
                       ? '-translate-y-0.5 border-accent-blue'
                       : 'border-hairline',

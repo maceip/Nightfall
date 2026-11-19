@@ -97,8 +97,8 @@ export function NightfallShowcaseRoot(): React.ReactElement {
   if (route.view === 'console') {
     return (
       <App
-        key={`console-${route.launchKey}`}
         themeModeOverride={colorMode}
+        onThemeModeChange={setColorMode}
         onBackToLanding={handleBackToLanding}
       />
     );

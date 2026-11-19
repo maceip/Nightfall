@@ -10,11 +10,13 @@ import type {
   ScorecardToolchainStatus,
 } from '@nightfall/core-contracts';
 import {
+  AstryxSegmentedControl,
   Button,
   Card,
   DataTable,
   type DataTableColumn,
   SectionHeader,
+  SegmentedControlItem,
   ShieldCheckIcon,
   StatusBadge,
 } from '@nightfall/ui-kit';
@@ -32,6 +34,8 @@ export type SettingsScreenProps = {
   onToggleKillSwitch?: () => void;
   repositories?: RepositoryRecord[];
   selectedRepo?: string;
+  themeMode?: 'light' | 'dark';
+  onChangeThemeMode?: (next: 'light' | 'dark') => void;
   onOpenRedTeamComposer: () => void;
   onOpenAuditLedger: () => void;
 };
@@ -47,6 +51,8 @@ export function SettingsScreen({
   onToggleKillSwitch,
   repositories,
   selectedRepo,
+  themeMode = 'light',
+  onChangeThemeMode,
   onOpenRedTeamComposer,
   onOpenAuditLedger,
 }: SettingsScreenProps): React.ReactElement {
@@ -112,7 +118,18 @@ export function SettingsScreen({
                   : 'Real-time orchestrator stream active with L7 egress scope enforcement.'}
             </p>
           </div>
-          <HStack gap={2} align="center">
+          <HStack gap={2} align="center" wrap="wrap">
+            {onChangeThemeMode ? (
+              <AstryxSegmentedControl
+                size="sm"
+                label="Color mode"
+                value={themeMode}
+                onChange={(v) => onChangeThemeMode(v as 'dark' | 'light')}
+              >
+                <SegmentedControlItem value="light" label="Light" />
+                <SegmentedControlItem value="dark" label="Dark" />
+              </AstryxSegmentedControl>
+            ) : null}
             {killSwitchEngaged ? (
               <StatusBadge status="critical" label="Kill-Switch Halted" />
             ) : null}

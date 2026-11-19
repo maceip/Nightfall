@@ -37,17 +37,28 @@ function readInitialThemeMode(): Exclude<ThemeMode, 'system'> {
 
 export type AppProps = {
   themeModeOverride?: Exclude<ThemeMode, 'system'>;
+  onThemeModeChange?: (next: Exclude<ThemeMode, 'system'>) => void;
   onBackToLanding?: () => void;
 };
 
-export function App({ themeModeOverride, onBackToLanding }: AppProps = {}): React.ReactElement {
+export function App({
+  themeModeOverride,
+  onThemeModeChange,
+  onBackToLanding,
+}: AppProps = {}): React.ReactElement {
   const ws = useNightfallWorkspace();
   const { data } = ws;
   const router = useNightfallRouter();
   const { section, rtStage, sidebarOpen, navigateTo } = router;
 
-  const [storedThemeMode] = useState<Exclude<ThemeMode, 'system'>>(readInitialThemeMode);
+  const [storedThemeMode, setStoredThemeMode] =
+    useState<Exclude<ThemeMode, 'system'>>(readInitialThemeMode);
   const themeMode = themeModeOverride ?? storedThemeMode;
+
+  function handleThemeChange(next: Exclude<ThemeMode, 'system'>): void {
+    setStoredThemeMode(next);
+    onThemeModeChange?.(next);
+  }
   const [selectedRepo, setSelectedRepo] = useState<string>('all');
   const [selectedSeverity, setSelectedSeverity] = useState<Severity | null>(null);
   const [showNewScanDrawer, setShowNewScanDrawer] = useState(false);
@@ -240,6 +251,8 @@ export function App({ themeModeOverride, onBackToLanding }: AppProps = {}): Reac
                   connectedLiveApi={data.connectedLiveApi}
                   repositories={data.repositories}
                   selectedRepo={selectedRepo}
+                  themeMode={themeMode}
+                  onChangeThemeMode={handleThemeChange}
                   onToggleKillSwitch={() => void ws.toggleKillSwitch()}
                   onOpenRedTeamComposer={() => navigateTo('red-team', 'composer')}
                   onOpenAuditLedger={() => navigateTo('scans')}
@@ -281,6 +294,7 @@ export function App({ themeModeOverride, onBackToLanding }: AppProps = {}): Reac
                 navigateTo('finding-detail', { findingId: finding.id });
                 void ws.startOrOpenFix(finding);
               }}
+              onToggleKillSwitch={() => void ws.toggleKillSwitch()}
             />
           )}
 

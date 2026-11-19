@@ -133,7 +133,7 @@ export function LandingPlatformDownloadsSection({
           </a>
         </HStack>
 
-        <div className="grid grid-cols-1 divide-y divide-hairline overflow-hidden rounded-2xl border border-hairline bg-canvas md:grid-cols-3 md:divide-x md:divide-y-0">
+        <div className="nf-elevated-surface grid grid-cols-1 divide-y divide-hairline overflow-hidden rounded-2xl border border-hairline bg-card md:grid-cols-3 md:divide-x md:divide-y-0">
           {installers.map((item) => {
             const isCurrent = item.id === detectedPlatform;
             return (

@@ -14,13 +14,7 @@ import {
 } from '@nightfall/ui-kit';
 import { CampaignDetailPanels, HttpMethodPill } from './campaign-detail-panels.js';
 
-export type CampaignTab =
-  | 'overview'
-  | 'findings'
-  | 'endpoints'
-  | 'activity'
-  | 'work_queue'
-  | 'shared_knowledge';
+export type CampaignTab = 'overview' | 'findings' | 'endpoints' | 'activity' | 'work_queue' | 'shared_knowledge';
 
 export type LiveCampaignScreenProps = {
   campaign: RedTeamCampaignRun;
@@ -82,6 +76,7 @@ export function LiveCampaignScreen({
   onSelectFindingReport,
   onResolveApproval,
   onOpenYamlBuilder,
+  onToggleKillSwitch,
 }: LiveCampaignScreenProps): React.ReactElement {
   const [activeTab, setActiveTab] = useState<CampaignTab>('overview');
   const [sevFilter, setSevFilter] = useState<string>('all');
@@ -162,7 +157,10 @@ export function LiveCampaignScreen({
 
         <HStack gap={4} align="center">
           <BudgetSignalBars pct={campaign.budgetRemainingPct} />
-          <span className="inline-flex items-center gap-2 rounded-full bg-pill px-3 py-1 text-[12.5px]">
+          <span
+            id="rt-campaign-status-pill"
+            className="inline-flex items-center gap-2 rounded-full border border-hairline-strong bg-pill px-3 py-1 text-[12.5px]"
+          >
             <StatusDot variant={statusInfo.dotVariant} isPulsing={statusInfo.isPulsing} label={statusInfo.label} />
             <span className="font-semibold text-ink">{statusInfo.label}</span>
             <span className="font-mono text-[12px] text-ink-secondary">{formatElapsed(campaign.elapsedSeconds)}</span>
@@ -296,6 +294,11 @@ export function LiveCampaignScreen({
                 Reject
               </Button>
             </>
+          ) : null}
+          {onToggleKillSwitch ? (
+            <Button id="btn-rt-footer-kill-switch" variant="destructive" size="sm" data-engaged={killSwitchEngaged ? 'true' : 'false'} className="h-6 px-2.5 text-[11.5px]" onClick={onToggleKillSwitch}>
+              {killSwitchEngaged ? 'Resume Sandboxes' : 'Halt Sandboxes'}
+            </Button>
           ) : null}
           <span className="text-ink-muted">{campaign.updatedLabel}</span>
         </div>

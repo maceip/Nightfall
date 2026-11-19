@@ -100,7 +100,7 @@ export function PromptInput({
       <div
         onClick={() => textareaRef.current?.focus()}
         className={cn(
-          'rounded-xl border border-primary-200 bg-surface p-2.5 shadow-2xs transition-colors focus-within:border-primary-400',
+          'rounded-xl border border-hairline-strong bg-canvas p-2.5 shadow-2xs transition-colors focus-within:border-ink-secondary',
           disabled && 'opacity-60 cursor-not-allowed',
           className,
         )}
@@ -154,7 +154,7 @@ export function PromptInputTextarea({
       disabled={disabled}
       rows={1}
       className={cn(
-        'w-full resize-none border-0 bg-transparent px-1.5 py-1 text-[13.5px] leading-relaxed text-ink placeholder:text-primary-400 outline-none focus:ring-0',
+        'w-full resize-none border-0 bg-transparent px-1.5 py-1 text-[13.5px] leading-relaxed text-ink placeholder:text-ink-muted outline-none focus:ring-0',
         className,
       )}
       {...props}

@@ -35,7 +35,7 @@ export function TooltipContent({
       <BaseTooltip.Positioner sideOffset={sideOffset} className="z-50">
         <BaseTooltip.Popup
           className={cn(
-            'rounded-md border border-primary-800 bg-primary-950 px-2.5 py-1 text-xs font-medium text-surface shadow-md outline-none',
+            'rounded-md border border-hairline-strong bg-ink px-2.5 py-1 text-xs font-medium text-canvas shadow-md outline-none',
             className,
           )}
           {...props}
