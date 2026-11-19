@@ -29,9 +29,11 @@ export default defineConfig(({ mode }) => {
   const isDebugBuild = isDebugBuildRequested(process.env);
   const productFlavor = resolveDesktopProductFlavor(process.env);
 
+  const pagesBase = process.env.NIGHTFALL_PAGES_BASE?.trim() || './';
+
   return {
-    // Relative asset base required for packaged Electron loadFile(file://...) (mirrors zcode)
-    base: './',
+    // Relative asset base required for packaged Electron loadFile(file://...) and subpath Pages
+    base: pagesBase,
     plugins: [tailwindcss(), react()],
     resolve: {
       alias: {
@@ -53,6 +55,7 @@ export default defineConfig(({ mode }) => {
       __NIGHTFALL_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
       __NIGHTFALL_PRODUCT_FLAVOR__: JSON.stringify(productFlavor),
       __NIGHTFALL_DEBUG_BUILD__: JSON.stringify(isDebugBuild),
+      __NIGHTFALL_PAGES_STATIC__: JSON.stringify(mode === 'pages'),
     },
     worker: {
       rollupOptions: {

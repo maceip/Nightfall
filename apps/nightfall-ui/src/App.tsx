@@ -35,13 +35,19 @@ function readInitialThemeMode(): Exclude<ThemeMode, 'system'> {
   return 'light';
 }
 
-export function App(): React.ReactElement {
+export type AppProps = {
+  themeModeOverride?: Exclude<ThemeMode, 'system'>;
+  onBackToLanding?: () => void;
+};
+
+export function App({ themeModeOverride, onBackToLanding }: AppProps = {}): React.ReactElement {
   const ws = useNightfallWorkspace();
   const { data } = ws;
   const router = useNightfallRouter();
   const { section, rtStage, sidebarOpen, navigateTo } = router;
 
-  const [themeMode] = useState<Exclude<ThemeMode, 'system'>>(readInitialThemeMode);
+  const [storedThemeMode] = useState<Exclude<ThemeMode, 'system'>>(readInitialThemeMode);
+  const themeMode = themeModeOverride ?? storedThemeMode;
   const [selectedRepo, setSelectedRepo] = useState<string>('all');
   const [selectedSeverity, setSelectedSeverity] = useState<Severity | null>(null);
   const [showNewScanDrawer, setShowNewScanDrawer] = useState(false);
@@ -153,6 +159,7 @@ export function App(): React.ReactElement {
           onChangeSelectedRepo={setSelectedRepo}
           onMarkDuplicate={(id) => void ws.markDuplicate(id)}
           onContinueFix={(f) => void ws.startOrOpenFix(f)}
+          onBackToLanding={onBackToLanding}
         >
           {ws.actionError ? (
             <div className="flex items-center justify-between border-b border-hairline-strong bg-status-danger px-6 py-2 text-xs text-status-danger-ink">

@@ -19,6 +19,7 @@ import {
   StatusBadge,
 } from '@nightfall/ui-kit';
 import { MantisIntegrationCard } from './mantis-integration-card.js';
+import { isPagesStaticBuild } from '../../api/pages-static-store.js';
 
 export type SettingsScreenProps = {
   sandboxToolchain?: SandboxToolchainStatus;
@@ -95,7 +96,10 @@ export function SettingsScreen({
                 Runtime Connectivity &amp; Emergency Sandbox Control
               </span>
               {!connectedLiveApi ? (
-                <StatusBadge status="verifying" label="Reconnecting…" />
+                <StatusBadge
+                  status="verifying"
+                  label={isPagesStaticBuild() ? 'Static Web Snapshot' : 'Reconnecting…'}
+                />
               ) : (
                 <span className="text-xs text-ink-muted">Live API + SSE</span>
               )}
@@ -103,7 +107,9 @@ export function SettingsScreen({
             <p className="m-0 text-xs text-ink-secondary text-pretty">
               {killSwitchEngaged
                 ? 'Emergency kill-switch engaged — active Red Team probes and sandbox executions are halted.'
-                : 'Real-time orchestrator stream active with L7 egress scope enforcement.'}
+                : !connectedLiveApi && isPagesStaticBuild()
+                  ? 'Browser localStorage workspace seeded from SHA-256 verified build capture. Start pnpm dev:api on :4000 or install Nightfall Desktop for live scans.'
+                  : 'Real-time orchestrator stream active with L7 egress scope enforcement.'}
             </p>
           </div>
           <HStack gap={2} align="center">

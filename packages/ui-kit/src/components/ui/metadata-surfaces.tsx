@@ -21,10 +21,7 @@ export function SegmentedControl<V extends string>({
   return (
     <div
       role="tablist"
-      className={cn(
-        'inline-flex w-fit items-center gap-0.5 rounded-full bg-[#EFEFED] p-1',
-        className,
-      )}
+      className={cn('inline-flex w-fit items-center gap-0.5 rounded-full bg-pill p-1', className)}
     >
       {options.map((opt) => {
         const active = opt.value === value;
@@ -39,8 +36,8 @@ export function SegmentedControl<V extends string>({
             className={cn(
               'inline-flex items-center justify-center gap-1.5 rounded-full px-3.5 py-1 text-[12.5px] font-medium transition-all cursor-pointer',
               active
-                ? 'bg-white text-[#141514] shadow-[0_1px_2px_rgba(0,0,0,0.08)]'
-                : 'text-[#5E605D] hover:text-[#141514]',
+                ? 'bg-canvas text-ink shadow-[0_1px_2px_rgba(0,0,0,0.08)]'
+                : 'text-ink-secondary hover:text-ink',
             )}
           >
             {opt.label}
@@ -60,10 +57,10 @@ export function MetadataField({
 }): React.ReactElement {
   return (
     <div className="space-y-1">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-[#7A7C78]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-muted">
         {label}
       </div>
-      <div className="text-[13.5px] text-[#141514]">{children}</div>
+      <div className="text-[13.5px] text-ink">{children}</div>
     </div>
   );
 }
@@ -107,16 +104,16 @@ export function LifecycleStepper({
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium',
                 done
-                  ? 'bg-[#DCFCE7] text-[#166534]'
+                  ? 'bg-status-mint text-status-mint-ink'
                   : current
-                    ? 'bg-[#141514] text-white'
-                    : 'bg-[#F2F3F1] text-[#6E706D]',
+                    ? 'bg-ink text-canvas'
+                    : 'bg-muted text-ink-secondary',
               )}
             >
               <span className="tabular-nums">{done ? '✓' : idx + 1}</span>
               <span>{stage}</span>
             </span>
-            {idx < stages.length - 1 ? <span className="text-[#C6C8C4]">→</span> : null}
+            {idx < stages.length - 1 ? <span className="text-ink-muted">→</span> : null}
           </li>
         );
       })}

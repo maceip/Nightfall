@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-electron/
+apps/nightfall-ui/dist-pages/
 build/
 !apps/nightfall-ui/build/
 !apps/nightfall-ui/build/**

@@ -336,3 +336,71 @@ jobs:
           path: |
             apps/nightfall-ui/dist-electron/win-${{ matrix.arch }}/*.msi
             apps/nightfall-ui/dist-electron/win-${{ matrix.arch }}/SHA256SUMS-*.txt
+
+  publish-release:
+    name: Publish Platform Installers to Latest GitHub Release
+    needs:
+      - build-macos-dmg
+      - build-windows-msi
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Nightfall repository
+        uses: actions/checkout@v4
+
+      - name: Download macOS arm64 DMG artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nightfall-debug-macos-arm64-dmg
+          path: release-dl/mac-arm64
+
+      - name: Download macOS x64 DMG artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nightfall-debug-macos-x64-dmg
+          path: release-dl/mac-x64
+
+      - name: Download Windows x64 MSI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nightfall-debug-windows-x64-msi
+          path: release-dl/win-x64
+
+      - name: Stage canonical platform installers and SHA256SUMS.txt
+        run: |
+          mkdir -p release-stage
+          cp "$(find release-dl/mac-arm64 -name '*.dmg' -print -quit)" release-stage/Nightfall-mac-arm64.dmg
+          cp "$(find release-dl/mac-x64 -name '*.dmg' -print -quit)" release-stage/Nightfall-mac-x64.dmg
+          cp "$(find release-dl/win-x64 -name '*.msi' -print -quit)" release-stage/Nightfall-win-x64.msi
+          (cd release-stage && sha256sum Nightfall-mac-arm64.dmg Nightfall-mac-x64.dmg Nightfall-win-x64.msi > SHA256SUMS.txt)
+          ls -lh release-stage/
+
+      - name: Create or update Latest GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" \
+              release-stage/Nightfall-mac-arm64.dmg \
+              release-stage/Nightfall-mac-x64.dmg \
+              release-stage/Nightfall-win-x64.msi \
+              release-stage/SHA256SUMS.txt \
+              --clobber \
+              --repo "${{ github.repository }}"
+          else
+            gh release create "${TAG}" \
+              release-stage/Nightfall-mac-arm64.dmg \
+              release-stage/Nightfall-mac-x64.dmg \
+              release-stage/Nightfall-win-x64.msi \
+              release-stage/SHA256SUMS.txt \
+              --target "${{ github.sha }}" \
+              --title "Nightfall ${TAG}" \
+              --notes "Automated Nightfall ${TAG} desktop installers for macOS (Apple Silicon arm64 & Intel x64 .dmg) and Windows (x64 WiX .msi)." \
+              --latest \
+              --repo "${{ github.repository }}"
+          fi

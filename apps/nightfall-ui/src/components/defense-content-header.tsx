@@ -42,6 +42,7 @@ export type DefenseContentHeaderProps = {
   onChangeSelectedRepo: (repo: string) => void;
   onMarkDuplicate?: (findingId: string) => void;
   onContinueFix?: (finding: FindingRecord) => void;
+  onBackToLanding?: () => void;
 };
 
 const SECTION_TITLES: Record<Exclude<PrimarySection, 'red-team'>, string> = {
@@ -78,6 +79,7 @@ export function DefenseContentHeader(props: DefenseContentHeaderProps): React.Re
     pendingApprovalsCount = 0, killSwitchEngaged, selectedRepo, repositories,
     activeFinding, onHistoryBack, onHistoryForward, onNavigate, onOpenNewScan,
     onOpenApprovals, onToggleKillSwitch, onChangeSelectedRepo, onMarkDuplicate, onContinueFix,
+    onBackToLanding,
   } = props;
 
   const barStyle = rightInsetPx ? { paddingRight: `${rightInsetPx}px` } : undefined;
@@ -208,6 +210,17 @@ export function DefenseContentHeader(props: DefenseContentHeaderProps): React.Re
           <Button variant="ghost" size="icon-sm" title="Toggle fullscreen workspace" aria-label="Toggle fullscreen workspace" onClick={toggleWindowFullscreen}>
             <ExpandDiagonalIcon size={13} />
           </Button>
+          {onBackToLanding ? (
+            <Button
+              id="btn-back-to-landing"
+              variant="ghost"
+              size="sm"
+              title="Return to Nightfall overview page"
+              onClick={onBackToLanding}
+            >
+              <span>Landing</span>
+            </Button>
+          ) : null}
         </div>
       </div>
     </>

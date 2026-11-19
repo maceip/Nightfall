@@ -32,6 +32,7 @@ export type ThreeColumnShellProps = {
   onChangeSelectedRepo: (repo: string) => void;
   onMarkDuplicate?: (findingId: string) => void;
   onContinueFix?: (finding: FindingRecord) => void;
+  onBackToLanding?: () => void;
   children: React.ReactNode;
 };
 
@@ -60,6 +61,7 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
     onChangeSelectedRepo,
     onMarkDuplicate,
     onContinueFix,
+    onBackToLanding,
     children,
   } = props;
 
@@ -110,6 +112,7 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
           onChangeSelectedRepo={onChangeSelectedRepo}
           onMarkDuplicate={onMarkDuplicate}
           onContinueFix={onContinueFix}
+          onBackToLanding={onBackToLanding}
         />
         {children}
       </main>

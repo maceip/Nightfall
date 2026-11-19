@@ -18,6 +18,19 @@ import type {
   ScorecardToolchainStatus,
   StreamEvent,
 } from '@nightfall/core-contracts';
+import {
+  isPagesStaticBuild,
+  loadStaticPagesBootstrap,
+  staticFetchScorecardChecks,
+  staticMarkFindingDuplicate,
+  staticMergeAndVerifyFix,
+  staticResolveApproval,
+  staticSendFixFollowUp,
+  staticStartFixProposal,
+  staticToggleKillSwitch,
+  staticToggleRepositoryCoverage,
+  throwLiveRuntimeRequired,
+} from './pages-static-store.js';
 
 export type SafetyMonitorSummary = {
   withinApprovedScope?: boolean;
@@ -51,95 +64,105 @@ function readInitialApiBaseUrl(): string {
     typeof import.meta !== 'undefined'
       ? (import.meta as unknown as { env?: Record<string, string> }).env
       : undefined;
-  if (metaEnv?.VITE_API_BASE) {
-    return metaEnv.VITE_API_BASE.replace(/\/+$/, '');
-  }
+  if (metaEnv?.VITE_API_BASE) return metaEnv.VITE_API_BASE.replace(/\/+$/, '');
   if (typeof window !== 'undefined') {
-    const desktopApiBase = (
-      window as unknown as { nightfallDesktop?: { apiBaseUrl?: string } }
-    ).nightfallDesktop?.apiBaseUrl;
-    if (desktopApiBase && desktopApiBase.trim()) {
-      return desktopApiBase.trim().replace(/\/+$/, '');
-    }
+    const queryApi = new URLSearchParams(window.location.search).get('api');
+    if (queryApi?.trim()) return queryApi.trim().replace(/\/+$/, '');
+    const desktopApiBase = window.nightfallDesktop?.apiBaseUrl;
+    if (desktopApiBase?.trim()) return desktopApiBase.trim().replace(/\/+$/, '');
   }
   return '/api';
 }
 
 let activeApiBaseUrl = readInitialApiBaseUrl();
+let resolvedPagesModePromise: Promise<'live' | 'static'> | null = null;
 
 export function setNightfallApiBaseUrl(url: string): void {
   activeApiBaseUrl = url.replace(/\/+$/, '') || '/api';
+  resolvedPagesModePromise = null;
 }
 
 export function getNightfallApiBaseUrl(): string {
   return activeApiBaseUrl;
 }
 
+async function isStaticModeActive(): Promise<boolean> {
+  if (!isPagesStaticBuild()) return false;
+  if (!resolvedPagesModePromise) {
+    resolvedPagesModePromise = (async () => {
+      const candidate =
+        activeApiBaseUrl !== '/api' ? activeApiBaseUrl : 'http://127.0.0.1:4000/api';
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 1100);
+      try {
+        const res = await fetch(`${candidate}/health`, { signal: ctrl.signal });
+        if (res.ok) {
+          activeApiBaseUrl = candidate;
+          return 'live';
+        }
+      } catch {
+        // Local daemon not running on visitor host; use SHA-256 verified Pages capture
+      } finally {
+        clearTimeout(timer);
+      }
+      return 'static';
+    })();
+  }
+  return (await resolvedPagesModePromise) === 'static';
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${activeApiBaseUrl}${path}`, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
+    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
-
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {
       const errBody = (await response.json()) as { error?: string };
-      if (errBody?.error) {
-        detail = errBody.error;
-      }
+      if (errBody?.error) detail = errBody.error;
     } catch {
       // keep HTTP status text
     }
     throw new Error(`Nightfall API error (${path}): ${detail}`);
   }
-
   return (await response.json()) as T;
 }
 
+function postJson<T>(path: string, body: unknown): Promise<T> {
+  return requestJson<T>(path, { method: 'POST', body: JSON.stringify(body) });
+}
+
 export async function fetchBootstrapState(): Promise<NightfallBootstrapPayload> {
+  if (await isStaticModeActive()) return loadStaticPagesBootstrap();
   const payload = await requestJson<
     Omit<NightfallBootstrapPayload, 'connectedLiveApi' | 'scorecardReports'> & {
       scorecardReports?: ScorecardReportRecord[];
     }
   >('/bootstrap');
-  return {
-    ...payload,
-    scorecardReports: payload.scorecardReports ?? [],
-    connectedLiveApi: true,
-  };
+  return { ...payload, scorecardReports: payload.scorecardReports ?? [], connectedLiveApi: true };
 }
 
 export function subscribeLiveEvents(
   onEvent: (ev: StreamEvent) => void,
   onConnectionChange?: (connected: boolean) => void,
 ): () => void {
-  if (typeof EventSource === 'undefined') {
+  if ((isPagesStaticBuild() && activeApiBaseUrl === '/api') || typeof EventSource === 'undefined') {
     return () => {};
   }
   try {
     const es = new EventSource(`${activeApiBaseUrl}/events`);
-    es.onopen = () => {
-      onConnectionChange?.(true);
-    };
-    es.onerror = () => {
-      onConnectionChange?.(false);
-    };
+    es.onopen = () => onConnectionChange?.(true);
+    es.onerror = () => onConnectionChange?.(false);
     es.onmessage = (msg) => {
       onConnectionChange?.(true);
       try {
-        const parsed = JSON.parse(msg.data) as StreamEvent;
-        onEvent(parsed);
+        onEvent(JSON.parse(msg.data) as StreamEvent);
       } catch {
         // ignore heartbeat frames
       }
     };
-    return () => {
-      es.close();
-    };
+    return () => es.close();
   } catch {
     return () => {};
   }
@@ -152,10 +175,8 @@ export async function triggerNewScanApi(req: NewScanRequest): Promise<{
   repositories?: RepositoryRecord[];
   scorecardReport?: ScorecardReportRecord;
 }> {
-  return requestJson('/scans', {
-    method: 'POST',
-    body: JSON.stringify(req),
-  });
+  if (await isStaticModeActive()) throwLiveRuntimeRequired('Running live repository scans');
+  return postJson('/scans', req);
 }
 
 export async function runScorecardScanApi(req: ScorecardScanRequest): Promise<{
@@ -164,30 +185,27 @@ export async function runScorecardScanApi(req: ScorecardScanRequest): Promise<{
   overview?: OverviewSummary;
   repositories?: RepositoryRecord[];
 }> {
-  return requestJson('/scorecard/scan', {
-    method: 'POST',
-    body: JSON.stringify(req),
-  });
+  if (await isStaticModeActive()) throwLiveRuntimeRequired('Running live Scorecard Go daemon scans');
+  return postJson('/scorecard/scan', req);
 }
 
 export async function fetchScorecardChecksApi(): Promise<{
   checks: ScorecardCheckCatalogEntry[];
   toolchain: ScorecardToolchainStatus;
 }> {
+  if (await isStaticModeActive()) return staticFetchScorecardChecks();
   return requestJson('/scorecard/checks');
 }
 
 export async function markFindingDuplicateApi(
   findingId: string,
   duplicateOfId?: string,
-): Promise<{
-  finding: FindingRecord;
-  overview?: OverviewSummary;
-}> {
-  return requestJson(`/findings/${encodeURIComponent(findingId)}/duplicate`, {
-    method: 'POST',
-    body: JSON.stringify(duplicateOfId ? { duplicateOfId } : {}),
-  });
+): Promise<{ finding: FindingRecord; overview?: OverviewSummary }> {
+  if (await isStaticModeActive()) return staticMarkFindingDuplicate(findingId, duplicateOfId);
+  return postJson(
+    `/findings/${encodeURIComponent(findingId)}/duplicate`,
+    duplicateOfId ? { duplicateOfId } : {},
+  );
 }
 
 export async function startFixProposalApi(findingId: string): Promise<{
@@ -195,20 +213,16 @@ export async function startFixProposalApi(findingId: string): Promise<{
   finding?: FindingRecord;
   overview?: OverviewSummary;
 }> {
-  return requestJson(`/findings/${encodeURIComponent(findingId)}/start-fix`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
+  if (await isStaticModeActive()) return staticStartFixProposal(findingId);
+  return postJson(`/findings/${encodeURIComponent(findingId)}/start-fix`, {});
 }
 
 export async function sendFixFollowUpApi(
   fixId: string,
   message: string,
 ): Promise<{ fix: FixProposal }> {
-  return requestJson(`/fixes/${encodeURIComponent(fixId)}/followup`, {
-    method: 'POST',
-    body: JSON.stringify({ message }),
-  });
+  if (await isStaticModeActive()) return staticSendFixFollowUp(fixId, message);
+  return postJson(`/fixes/${encodeURIComponent(fixId)}/followup`, { message });
 }
 
 export async function mergeAndVerifyFixApi(fixId: string): Promise<{
@@ -218,19 +232,15 @@ export async function mergeAndVerifyFixApi(fixId: string): Promise<{
   scorecardReport?: ScorecardReportRecord;
   repositories?: RepositoryRecord[];
 }> {
-  return requestJson(`/fixes/${encodeURIComponent(fixId)}/merge-and-verify`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
+  if (await isStaticModeActive()) return staticMergeAndVerifyFix(fixId);
+  return postJson(`/fixes/${encodeURIComponent(fixId)}/merge-and-verify`, {});
 }
 
-export async function toggleRepositoryCoverageApi(repoId: string): Promise<{
-  repository: RepositoryRecord;
-}> {
-  return requestJson(`/repositories/${encodeURIComponent(repoId)}/toggle-scans`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
+export async function toggleRepositoryCoverageApi(
+  repoId: string,
+): Promise<{ repository: RepositoryRecord }> {
+  if (await isStaticModeActive()) return staticToggleRepositoryCoverage(repoId);
+  return postJson(`/repositories/${encodeURIComponent(repoId)}/toggle-scans`, {});
 }
 
 export async function prepareCampaignApi(input: {
@@ -240,44 +250,34 @@ export async function prepareCampaignApi(input: {
   askForApproval: boolean;
   modelId: string;
 }): Promise<{ campaign: RedTeamCampaignRun }> {
-  return requestJson('/red-team/campaigns/prepare', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
+  if (await isStaticModeActive()) throwLiveRuntimeRequired('Preparing a live Red Team campaign');
+  return postJson('/red-team/campaigns/prepare', input);
 }
 
-/**
- * Launches a campaign. Any target other than the bundled loopback staging server needs
- * `signedManifest`: a scope signed with a pinned operator key (`nightfall sign`).
- */
 export async function launchCampaignApi(
   campaignId: string,
   yamlText: string,
   signedManifest?: unknown,
 ): Promise<{ campaign: RedTeamCampaignRun }> {
-  return requestJson(`/red-team/campaigns/${encodeURIComponent(campaignId)}/launch`, {
-    method: 'POST',
-    body: JSON.stringify(signedManifest ? { yamlText, signedManifest } : { yamlText }),
-  });
+  if (await isStaticModeActive()) throwLiveRuntimeRequired('Launching live Red Team probes');
+  return postJson(
+    `/red-team/campaigns/${encodeURIComponent(campaignId)}/launch`,
+    signedManifest ? { yamlText, signedManifest } : { yamlText },
+  );
 }
 
 export async function resolveApprovalApi(
   approvalId: string,
   decision: 'approved' | 'rejected',
 ): Promise<{ approval: HitlApprovalRequest; campaign?: RedTeamCampaignRun }> {
-  return requestJson(`/policy/approvals/${encodeURIComponent(approvalId)}/resolve`, {
-    method: 'POST',
-    body: JSON.stringify({ decision }),
-  });
+  if (await isStaticModeActive()) return staticResolveApproval(approvalId, decision);
+  return postJson(`/policy/approvals/${encodeURIComponent(approvalId)}/resolve`, { decision });
 }
 
 export async function toggleKillSwitchApi(
   engaged: boolean,
   reason: string,
 ): Promise<{ engaged: boolean }> {
-  return requestJson('/policy/kill-switch', {
-    method: 'POST',
-    body: JSON.stringify({ engaged, reason }),
-  });
+  if (await isStaticModeActive()) return staticToggleKillSwitch(engaged);
+  return postJson('/policy/kill-switch', { engaged, reason });
 }
-

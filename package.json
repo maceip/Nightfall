@@ -18,6 +18,7 @@
     "build": "pnpm -r --filter './packages/*' --filter './services/*' --filter './apps/*' build",
     "build:scorecard": "bash infra/scorecard/build-scorecard.sh",
     "build:codenav": "bash infra/codenav/build-codenav.sh",
+    "build:pages": "tsx scripts/build-pages.ts",
     "build:desktop": "pnpm --filter @nightfall/nightfall-ui run build:desktop",
     "bundle:desktop": "pnpm --filter @nightfall/nightfall-ui run bundle --",
     "bundle:desktop:dmg": "pnpm --filter @nightfall/nightfall-ui run bundle:dmg",

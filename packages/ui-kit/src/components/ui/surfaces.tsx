@@ -6,10 +6,7 @@ export type CardProps = React.ComponentProps<'div'>;
 export function Card({ className, ...props }: CardProps): React.ReactElement {
   return (
     <div
-      className={cn(
-        'rounded-2xl border border-[#EBEBEA] bg-white p-4 text-[#141514]',
-        className,
-      )}
+      className={cn('rounded-2xl border border-hairline bg-canvas p-4 text-ink', className)}
       {...props}
     />
   );
@@ -32,14 +29,14 @@ export function KpiCard({
 }: KpiCardProps): React.ReactElement {
   return (
     <Card className={cn('flex flex-col justify-between gap-2 p-4', className)}>
-      <div className="text-[12.5px] font-medium text-[#5E605D]">{label}</div>
+      <div className="text-[12.5px] font-medium text-ink-secondary">{label}</div>
       <div className="flex items-baseline gap-1.5 tabular-nums">
-        <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-[#141514]">
+        <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink">
           {value}
         </span>
-        {suffix ? <span className="text-[15px] text-[#7A7C78]">{suffix}</span> : null}
+        {suffix ? <span className="text-[15px] text-ink-muted">{suffix}</span> : null}
       </div>
-      {caption ? <div className="text-[12px] text-[#6E706D]">{caption}</div> : null}
+      {caption ? <div className="text-[12px] text-ink-secondary">{caption}</div> : null}
     </Card>
   );
 }
@@ -71,7 +68,7 @@ export function ConnectedKpiStrip({
   return (
     <div
       className={cn(
-        'grid divide-y sm:divide-y-0 sm:divide-x divide-[#ECEEE9] rounded-2xl border border-[#E6E7E5] bg-white tabular-nums',
+        'grid divide-y divide-hairline rounded-2xl border border-hairline bg-canvas tabular-nums sm:divide-x sm:divide-y-0',
         colsCls,
         className,
       )}
@@ -85,35 +82,35 @@ export function ConnectedKpiStrip({
             onClick={cell.onClick}
             className={cn(
               'flex flex-col justify-between gap-2 px-5 py-4 text-left',
-              cell.onClick && 'cursor-pointer transition-colors hover:bg-[#FAFBF9]',
+              cell.onClick && 'cursor-pointer transition-colors hover:bg-sidebar',
             )}
           >
             {labelFirst ? (
               <>
-                <div className="text-[12.5px] font-medium text-[#5E605D]">{cell.label}</div>
+                <div className="text-[12.5px] font-medium text-ink-secondary">{cell.label}</div>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-[#141514]">
+                  <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink">
                     {cell.value}
                   </span>
                   {cell.suffix ? (
-                    <span className="text-[18px] font-medium text-[#8A8C88]">{cell.suffix}</span>
+                    <span className="text-[18px] font-medium text-ink-muted">{cell.suffix}</span>
                   ) : null}
                 </div>
               </>
             ) : (
               <>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-[#141514]">
+                  <span className="text-[28px] font-semibold leading-none tracking-[-0.02em] text-ink">
                     {cell.value}
                   </span>
                   {cell.suffix ? (
-                    <span className="text-[18px] font-medium text-[#8A8C88]">{cell.suffix}</span>
+                    <span className="text-[18px] font-medium text-ink-muted">{cell.suffix}</span>
                   ) : null}
                 </div>
-                <div className="text-[13px] text-[#6E706D]">{cell.label}</div>
+                <div className="text-[13px] text-ink-secondary">{cell.label}</div>
               </>
             )}
-            {cell.caption ? <div className="text-[12px] text-[#6E706D]">{cell.caption}</div> : null}
+            {cell.caption ? <div className="text-[12px] text-ink-secondary">{cell.caption}</div> : null}
           </Tag>
         );
       })}
@@ -137,8 +134,8 @@ export function SectionHeader({
   return (
     <div className={cn('mb-3 flex items-center justify-between gap-3', className)}>
       <div className="min-w-0">
-        <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em] text-[#141514]">{title}</h2>
-        {subtitle ? <p className="mt-0.5 mb-0 text-[12.5px] text-[#5E605D]">{subtitle}</p> : null}
+        <h2 className="m-0 text-[15px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>
+        {subtitle ? <p className="mt-0.5 mb-0 text-[12.5px] text-ink-secondary">{subtitle}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
     </div>
@@ -178,14 +175,14 @@ export function DataTable<T>({
   className,
 }: DataTableProps<T>): React.ReactElement {
   return (
-    <div className={cn('w-full overflow-x-auto bg-white', className)}>
+    <div className={cn('w-full overflow-x-auto bg-canvas', className)}>
       <table
         className="w-full border-collapse text-left text-[13.5px] tabular-nums"
         aria-label={ariaLabel}
       >
         {!hideHeader ? (
           <thead>
-            <tr className="border-b border-[#ECEEE9] bg-white text-[12px] font-medium text-[#6E706D]">
+            <tr className="border-b border-hairline bg-canvas text-[12px] font-medium text-ink-secondary">
               {columns.map((col) => (
                 <th key={col.key} className={cn('px-3 py-2.5 font-medium', col.className)}>
                   {col.header}
@@ -194,10 +191,10 @@ export function DataTable<T>({
             </tr>
           </thead>
         ) : null}
-        <tbody className="divide-y divide-[#F0F1EE]">
+        <tbody className="divide-y divide-hairline">
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-10 text-center text-[13px] text-[#7A7C78]">
+              <td colSpan={columns.length} className="px-4 py-10 text-center text-[13px] text-ink-muted">
                 {emptyMessage}
               </td>
             </tr>
@@ -209,7 +206,7 @@ export function DataTable<T>({
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 className={cn(
                   'transition-colors',
-                  onRowClick && 'cursor-pointer hover:bg-[#F8F9F7]',
+                  onRowClick && 'cursor-pointer hover:bg-sidebar',
                 )}
               >
                 {columns.map((col) => (
@@ -223,11 +220,10 @@ export function DataTable<T>({
         </tbody>
       </table>
       {footer ? (
-        <div className="flex items-center justify-between border-t border-[#ECEEE9] px-4 py-2.5 text-[12px] text-[#6E706D]">
+        <div className="flex items-center justify-between border-t border-hairline px-4 py-2.5 text-[12px] text-ink-secondary">
           {footer}
         </div>
       ) : null}
     </div>
   );
 }
-

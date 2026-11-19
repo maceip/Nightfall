@@ -56,10 +56,10 @@ function SankeyNodeLabel({
   return (
     <g transform={`translate(${x}, ${y})`}>
       <rect x="0" y="2" width="3.5" height={barHeight} rx="1.75" fill={accent} />
-      <text x="11" y="17" className="fill-[#5E605D] text-[12px] font-medium">
+      <text x="11" y="17" className="fill-ink-secondary text-[12px] font-medium">
         {label}
       </text>
-      <text x="11" y="38" className="fill-[#141514] text-[16px] font-semibold">
+      <text x="11" y="38" className="fill-ink text-[16px] font-semibold">
         {count}
       </text>
     </g>
@@ -149,15 +149,15 @@ export function SankeyDiagram({
               width="102"
               height="62"
               rx="12"
-              fill="#FFFFFF"
-              stroke="#DCDED9"
+              fill="var(--nf-canvas-bg)"
+              stroke="var(--nf-hairline-strong)"
               strokeWidth="1.25"
             />
             <rect x="8" y="11" width="3.5" height="40" rx="1.75" fill={sevMeta.accent} />
-            <text x="20" y="27" className="fill-[#141514] text-[12px] font-semibold">
+            <text x="20" y="27" className="fill-ink text-[12px] font-semibold">
               {sevMeta.label}
             </text>
-            <text x="20" y="48" className="fill-[#141514] text-[16px] font-semibold">
+            <text x="20" y="48" className="fill-ink text-[16px] font-semibold">
               {sevTotal}
             </text>
           </g>
@@ -178,7 +178,7 @@ export function SankeyDiagram({
             type="button"
             id="btn-reset-sankey-filter"
             onClick={() => onSelectSeverity(null)}
-            className="inline-flex items-center gap-1 rounded-full border border-[#E2E3E1] bg-white px-3 py-1 text-[12px] font-medium text-[#434542] hover:bg-[#F6F7F5] cursor-pointer"
+            className="inline-flex items-center gap-1 rounded-full border border-hairline-strong bg-canvas px-3 py-1 text-[12px] font-medium text-ink-secondary hover:bg-muted cursor-pointer"
           >
             Showing {sevMeta.label} ({sevTotal}) · Clear filter ×
           </button>
@@ -269,13 +269,13 @@ export function SankeyDiagram({
                 width="108"
                 height="52"
                 rx="10"
-                className="fill-transparent transition-colors group-hover:fill-[#F4F5F3]"
+                className="fill-transparent transition-colors group-hover:fill-muted"
               />
               <rect x="0" y="2" width="3.5" height="40" rx="1.75" fill={sev.accent} />
-              <text x="11" y="17" className="fill-[#5E605D] text-[12px] font-medium">
+              <text x="11" y="17" className="fill-ink-secondary text-[12px] font-medium">
                 {sev.label}
               </text>
-              <text x="11" y="38" className="fill-[#141514] text-[16px] font-semibold">
+              <text x="11" y="38" className="fill-ink text-[16px] font-semibold">
                 {count}
               </text>
             </g>
