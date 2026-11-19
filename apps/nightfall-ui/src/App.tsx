@@ -78,7 +78,7 @@ export function App(): React.ReactElement {
   if (ws.loadError) {
     return (
       <Theme theme={nightfallTheme} mode={themeMode}>
-        <div className="flex h-screen w-screen items-center justify-center bg-shell p-6 text-ink">
+        <div className="flex h-dvh w-full items-center justify-center bg-shell p-6 text-ink">
           <Card id="nightfall-bootstrap-error" className="max-w-md border-hairline-strong bg-canvas p-6">
             <VStack gap={3}>
               <div className="inline-flex items-center gap-2 text-sm font-semibold text-status-danger-ink">
@@ -99,7 +99,7 @@ export function App(): React.ReactElement {
   if (!data || !scoped) {
     return (
       <Theme theme={nightfallTheme} mode={themeMode}>
-        <div className="flex h-screen w-screen items-center justify-center bg-shell text-sm font-medium text-ink-secondary">
+        <div className="flex h-dvh w-full items-center justify-center bg-shell text-sm font-medium text-ink-secondary">
           Loading Nightfall Workspace…
         </div>
       </Theme>
@@ -166,6 +166,7 @@ export function App(): React.ReactElement {
               {section === 'overview' ? (
                 <OverviewScreen
                   overview={scoped.overview}
+                  findings={scoped.findings}
                   fixes={scoped.fixes}
                   scorecardReports={data.scorecardReports}
                   mantisToolchain={data.mantisToolchain}

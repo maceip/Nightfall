@@ -75,7 +75,7 @@ export function ThreeColumnShell(props: ThreeColumnShellProps): React.ReactEleme
   return (
     <div
       id="nightfall-three-col-app"
-      className="flex h-screen w-screen overflow-hidden bg-canvas text-ink"
+      className="flex h-dvh w-full overflow-hidden bg-canvas text-ink"
     >
       <ProductSidebar
         section={section}

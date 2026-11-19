@@ -9,7 +9,6 @@ import {
   type DataTableColumn,
   FilterIcon,
   Input,
-  MoreHorizontalIcon,
   NightfallHorizonIcon,
   RedTeamSparkIcon,
   SankeyDiagram,
@@ -246,16 +245,7 @@ export function FindingsScreen({
             }}
           >
             <FilterIcon size={14} />
-            <span>Filters</span>
-          </Button>
-
-          <Button
-            id="btn-findings-more"
-            variant="outline"
-            size="icon"
-            aria-label="More findings options"
-          >
-            <MoreHorizontalIcon size={15} />
+            <span>Reset filters</span>
           </Button>
         </HStack>
       </div>

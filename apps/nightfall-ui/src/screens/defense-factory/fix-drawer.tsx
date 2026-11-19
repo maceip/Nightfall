@@ -5,7 +5,6 @@ import { StatusDot } from '@astryxdesign/core/StatusDot';
 import type { FixProposal } from '@nightfall/core-contracts';
 import {
   ArrowUpIcon,
-  Badge,
   Button,
   ChevronDownIcon,
   CloseIcon,
@@ -19,7 +18,6 @@ import {
   DrawerContent,
   GitBranchIcon,
   PlusIcon,
-  StatusBadge,
   UnifiedDiffViewer,
 } from '@nightfall/ui-kit';
 
@@ -96,7 +94,7 @@ export function FixDrawer({
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto bg-canvas px-5 py-4 tabular-nums">
-          <div className="space-y-1 border-l-2 border-hairline-strong pl-3 text-[13px] text-ink-secondary">
+          <div className="space-y-1 rounded-xl border border-hairline bg-sidebar px-3.5 py-2.5 text-[13px] text-ink-secondary">
             <div className="text-xs text-ink-muted">Fix requested in background</div>
             <div className="text-ink">
               Help fix <span className="font-semibold">{activeFix.findingIds.join(', ')}</span> in{' '}
@@ -121,13 +119,15 @@ export function FixDrawer({
               <ChevronDownIcon size={15} className="text-ink-muted" />
             </CollapsibleTrigger>
             <CollapsiblePanel className="px-2.5 pb-2">
-              <div className="flex flex-wrap gap-1.5">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs text-ink">
                 {gateList.map((g) => (
-                  <StatusBadge
-                    key={g.key}
-                    status={g.passed ? 'verified' : 'verifying'}
-                    label={g.passed ? `${g.label} ✓` : `${g.label} Pending`}
-                  />
+                  <span key={g.key} className="inline-flex items-center gap-1.5">
+                    <StatusDot
+                      variant={g.passed ? 'success' : 'warning'}
+                      label={g.passed ? `${g.label} passed` : `${g.label} pending`}
+                    />
+                    <span>{g.label}</span>
+                  </span>
                 ))}
               </div>
               <p className="mt-2 mb-0 text-xs text-ink-secondary">{activeFix.gates.criticNotes}</p>
@@ -142,10 +142,8 @@ export function FixDrawer({
 
           <div className="space-y-3 rounded-2xl border border-hairline bg-canvas p-4">
             <HStack justify="between" align="center" wrap="wrap" gap={2}>
-              <span className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-                Proposed fix 1
-              </span>
-              <Badge variant="accent">{sandboxLabel}</Badge>
+              <span className="text-xs font-medium text-ink-muted">Proposed patch</span>
+              <span className="font-mono text-xs text-ink-secondary">{sandboxLabel}</span>
             </HStack>
 
             <div className="space-y-1">

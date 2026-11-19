@@ -1,11 +1,9 @@
 import React, { useState } from 'react';
 import { Divider } from '@astryxdesign/core/Divider';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Token } from '@astryxdesign/core/Token';
 import type { EvidenceBundle, FindingRecord } from '@nightfall/core-contracts';
 import {
   ArrowLeftIcon,
-  Badge,
   Button,
   MetadataField,
   MetadataRail,
@@ -185,11 +183,11 @@ export function FindingReportScreen({
 
         <section id="sec-exploit-chain" className="space-y-3.5 scroll-mt-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="m-0 text-[17px] font-semibold tracking-[-0.01em] text-ink">
+            <h2 className="m-0 text-[17px] font-semibold text-ink">
               Exploit chain
             </h2>
             {evidence?.canaryMarker ? (
-              <Token size="sm" color="blue" label={`Canary ${evidence.canaryMarker}`} />
+              <span className="font-mono text-xs text-ink-muted">Canary {evidence.canaryMarker}</span>
             ) : null}
           </div>
 
@@ -209,11 +207,12 @@ export function FindingReportScreen({
                       {trace.method} {trace.url}
                     </span>
                     <HStack gap={2} align="center">
-                      <Badge variant="informational">{trace.actor}</Badge>
-                      <StatusBadge
-                        status={trace.statusCode < 400 ? 'verified' : 'not_recorded'}
-                        label={`HTTP ${trace.statusCode}`}
-                      />
+                      <span className="font-mono text-ink-secondary">{trace.actor}</span>
+                      {trace.statusCode >= 400 ? (
+                        <StatusBadge status="verifying" label={`HTTP ${trace.statusCode}`} />
+                      ) : (
+                        <span className="font-mono text-ink-muted">HTTP {trace.statusCode}</span>
+                      )}
                     </HStack>
                   </div>
                   <pre className="m-0 overflow-x-auto rounded-lg border border-hairline bg-canvas p-2.5 font-mono text-[12px] leading-relaxed text-ink">
@@ -250,7 +249,9 @@ export function FindingReportScreen({
 
         <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
           <span className="text-[12.5px] text-ink-muted">
-            Verified reproducible inside Microsoft LiteBox disposable sandbox
+            {evidence?.reproducible !== false
+              ? 'Reproducible HTTP evidence captured via L7 Egress Policy Proxy'
+              : 'Dynamic evidence snapshot'}
           </span>
           <Button
             id="btn-promote-defense-factory"
@@ -278,11 +279,11 @@ export function FindingReportScreen({
           </MetadataField>
         ) : null}
 
-        <div className="space-y-2 pt-2">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-muted">
-            ON THIS PAGE
+        <div className="space-y-1.5 pt-2">
+          <div className="text-xs font-medium text-ink-muted">
+            On this page
           </div>
-          <nav aria-label="Report sections" className="flex flex-col text-[13px]">
+          <nav aria-label="Report sections" className="flex flex-col gap-0.5 text-[13px]">
             {TOC_ITEMS.map((item) => {
               const isActive = activeSection === item.id;
               return (
@@ -291,10 +292,10 @@ export function FindingReportScreen({
                   href={`#${item.id}`}
                   onClick={() => setActiveSection(item.id)}
                   className={cn(
-                    'border-l-2 py-1 pl-3 no-underline transition-colors',
+                    'rounded-md px-2.5 py-1 no-underline transition-colors',
                     isActive
-                      ? 'border-ink font-medium text-ink'
-                      : 'border-hairline text-ink-muted hover:text-ink',
+                      ? 'bg-pill font-medium text-ink'
+                      : 'text-ink-muted hover:text-ink',
                   )}
                 >
                   {item.label}

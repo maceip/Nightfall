@@ -2,7 +2,6 @@ import React from 'react';
 import { HStack } from '@astryxdesign/core/HStack';
 import type { FixProposal } from '@nightfall/core-contracts';
 import {
-  Badge,
   Button,
   CloseIcon,
   DataTable,
@@ -55,12 +54,11 @@ export function FixesScreen({
       header: 'Repository',
       className: 'w-64',
       cell: (fix) => (
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           <div className="font-mono text-[13px] font-medium text-ink">{fix.repository}</div>
-          <HStack gap={1.5} align="center" wrap="wrap" className="text-xs text-ink-muted">
-            <span>{fix.snapshotLabel}</span>
-            <Badge variant="accent">{formatSandboxLabel(fix.sandboxBackend)}</Badge>
-          </HStack>
+          <div className="text-xs text-ink-muted">
+            {fix.snapshotLabel} · {formatSandboxLabel(fix.sandboxBackend)}
+          </div>
         </div>
       ),
     },

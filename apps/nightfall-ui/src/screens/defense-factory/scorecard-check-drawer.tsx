@@ -1,7 +1,6 @@
 import React from 'react';
 import { Code } from '@astryxdesign/core/Code';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Token } from '@astryxdesign/core/Token';
 import type {
   FindingRecord,
   ScorecardCheckResult,
@@ -18,7 +17,6 @@ import {
   DrawerContent,
   ScorecardScorePill,
   SeverityBadge,
-  StatusBadge,
   UnifiedDiffViewer,
 } from '@nightfall/ui-kit';
 
@@ -47,14 +45,6 @@ export function ScorecardCheckDrawer({
   if (!check) return null;
 
   const patchFindings = check.findings.filter((f) => Boolean(f.remediation?.patch));
-  const statusMapped =
-    check.status === 'pass'
-      ? 'verified'
-      : check.status === 'fail'
-        ? 'critical'
-        : check.status === 'warn'
-          ? 'verifying'
-          : 'not_recorded';
 
   return (
     <DialogRoot
@@ -74,10 +64,10 @@ export function ScorecardCheckDrawer({
               <DialogTitle>{check.name}</DialogTitle>
               <ScorecardScorePill score={check.score} />
               <SeverityBadge severity={mapScorecardRiskToSeverity(check.risk)} />
-              <StatusBadge status={statusMapped} label={check.status} />
             </HStack>
             <DialogDescription>
-              <span className="font-mono">{repository}</span> · {check.short || check.reason}
+              <span className="font-mono">{repository}</span> ·{' '}
+              <span className="font-mono">{check.status}</span> · {check.short || check.reason}
             </DialogDescription>
           </div>
           <DialogClose id="btn-close-scorecard-check-drawer" aria-label="Close check inspector">
@@ -87,31 +77,33 @@ export function ScorecardCheckDrawer({
 
         <div className="flex-1 space-y-5 overflow-y-auto bg-canvas px-5 py-4 tabular-nums">
           <section className="space-y-1.5">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+            <div className="text-[11px] font-semibold uppercase text-ink-muted">
               EVALUATION REASON
             </div>
-            <p className="m-0 text-[13px] leading-relaxed text-ink">{check.reason}</p>
+            <p className="m-0 text-[13px] leading-relaxed text-ink text-pretty">{check.reason}</p>
             {check.description ? (
-              <p className="m-0 text-xs leading-relaxed text-ink-secondary">{check.description}</p>
+              <p className="m-0 text-xs leading-relaxed text-ink-secondary text-pretty">
+                {check.description}
+              </p>
             ) : null}
           </section>
 
           {check.findings.length > 0 ? (
             <section className="space-y-2">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+              <div className="text-[11px] font-semibold uppercase text-ink-muted">
                 PROBE EVIDENCE ({check.findings.length})
               </div>
-              <div className="space-y-2">
+              <div className="divide-y divide-hairline overflow-hidden rounded-xl border border-hairline">
                 {check.findings.map((probe, idx) => (
                   <div
                     key={`${probe.probe}-${idx}`}
-                    className="rounded-xl border border-hairline bg-sidebar p-3 text-xs"
+                    className="p-3 text-xs"
                   >
                     <HStack justify="between" align="center" wrap="wrap" gap={2}>
                       <Code size="inherit">{probe.probe}</Code>
-                      <Token label={probe.outcome} size="sm" color="gray" />
+                      <span className="font-mono text-[11px] text-ink-muted">{probe.outcome}</span>
                     </HStack>
-                    <p className="mt-1.5 mb-0 text-ink">{probe.message}</p>
+                    <p className="mt-1.5 mb-0 text-ink text-pretty">{probe.message}</p>
                     {probe.location?.path ? (
                       <div className="mt-1.5 font-mono text-[11px] text-ink-muted">
                         {probe.location.path}
@@ -126,7 +118,7 @@ export function ScorecardCheckDrawer({
 
           {patchFindings.map((pf, idx) => (
             <section key={`patch-${idx}`} className="space-y-1.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+              <div className="text-[11px] font-semibold uppercase text-ink-muted">
                 SUGGESTED REMEDIATION DIFF
               </div>
               <UnifiedDiffViewer
@@ -138,7 +130,7 @@ export function ScorecardCheckDrawer({
 
           {check.remediationSteps.length > 0 ? (
             <section className="space-y-1.5">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+              <div className="text-[11px] font-semibold uppercase text-ink-muted">
                 REMEDIATION STEPS
               </div>
               <ol className="m-0 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-secondary">

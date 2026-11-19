@@ -76,6 +76,13 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
     // 4. Overview, Repositories (with Scorecard pill), Scorecard screen + check inspector + live scan, and Settings
     fireEvent.click(document.querySelector('#nav-btn-overview')!);
     await waitFor(() => expect(screen.getByText('Proposed fixes')).toBeTruthy());
+    const timeframeSelect = document.querySelector('#select-overview-timeframe') as HTMLSelectElement;
+    expect(timeframeSelect).toBeTruthy();
+    fireEvent.change(timeframeSelect, { target: { value: '7d' } });
+    expect(screen.getByText('Fixed in last 7d')).toBeTruthy();
+    fireEvent.change(timeframeSelect, { target: { value: '30d' } });
+    expect(screen.getByText('Fixed in last 30d')).toBeTruthy();
+    fireEvent.change(timeframeSelect, { target: { value: 'all' } });
 
     fireEvent.click(document.querySelector('#nav-btn-repositories')!);
     await waitFor(() => expect(screen.getByText('PR review coverage')).toBeTruthy());

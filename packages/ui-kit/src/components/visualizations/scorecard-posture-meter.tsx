@@ -80,7 +80,7 @@ export function ScorecardPostureMeter({
   const filledSegments = safeScore === null ? 0 : Math.round(safeScore);
   const activeSegmentClass =
     safeScore === null
-      ? 'bg-[#DEDFD9]'
+      ? 'bg-pill'
       : safeScore >= 8
         ? 'bg-[#15803D]'
         : safeScore >= 5
@@ -93,34 +93,34 @@ export function ScorecardPostureMeter({
     <div
       id="scorecard-posture-meter"
       className={cn(
-        'rounded-2xl border border-[#E6E7E5] bg-white p-5 tabular-nums',
+        'rounded-2xl border border-hairline bg-canvas p-5 tabular-nums',
         className,
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
-          <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-[#6E706D]">
-            <ScorecardPostureIcon size={14} className="text-[#15803D]" />
+          <div className="inline-flex items-center gap-1.5 text-xs font-medium text-ink-secondary">
+            <ScorecardPostureIcon size={14} className="text-status-mint-ink" />
             <span>Supply-Chain &amp; CI Workflow Posture</span>
           </div>
           <div className="flex items-baseline gap-2.5">
-            <span className="text-[30px] font-semibold leading-none tracking-[-0.02em] text-[#141514]">
+            <span className="text-[30px] font-semibold leading-none text-ink">
               {displayScore}
             </span>
-            <span className="text-sm font-medium text-[#7A7C78]">/ 10.0</span>
-            <span className="text-xs text-[#5E605D]">· {repository}</span>
+            <span className="text-sm font-medium text-ink-muted">/ 10.0</span>
+            <span className="font-mono text-xs text-ink-secondary">· {repository}</span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
           {observedRevision ? (
-            <span className="font-mono text-[#5E605D]">{observedRevision.slice(0, 12)}</span>
+            <span className="font-mono text-ink-secondary">{observedRevision.slice(0, 12)}</span>
           ) : null}
           {scorecardVersion ? (
-            <Badge variant="informational">nightfall-scorecard {scorecardVersion}</Badge>
+            <span className="font-mono">nightfall-scorecard {scorecardVersion}</span>
           ) : null}
           {evaluatedAt ? (
-            <span className="text-[#7A7C78]">{evaluatedAt.slice(0, 19).replace('T', ' ')}Z</span>
+            <span>· {evaluatedAt.slice(0, 19).replace('T', ' ')}Z</span>
           ) : null}
         </div>
       </div>
@@ -137,25 +137,35 @@ export function ScorecardPostureMeter({
           <div
             key={idx}
             className={cn(
-              'h-3 rounded-[4px] transition-colors',
-              idx < filledSegments ? activeSegmentClass : 'bg-[#F0F1EE]',
+              'h-3 rounded-[4px]',
+              idx < filledSegments ? activeSegmentClass : 'bg-sidebar',
             )}
           />
         ))}
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Badge variant={riskSummary.criticalFailing > 0 ? 'critical' : 'informational'}>
-          Critical failing: {riskSummary.criticalFailing}
-        </Badge>
-        <Badge variant={riskSummary.highFailing > 0 ? 'high' : 'informational'}>
-          High failing: {riskSummary.highFailing}
-        </Badge>
-        <Badge variant={riskSummary.mediumFailing > 0 ? 'medium' : 'informational'}>
-          Medium failing: {riskSummary.mediumFailing}
-        </Badge>
-        <Badge variant="verified">Passing: {riskSummary.passingChecks}</Badge>
-        <Badge variant="not_recorded">Inconclusive: {riskSummary.inconclusiveChecks}</Badge>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 border-t border-hairline pt-3 text-xs text-ink-secondary">
+        <span>
+          Critical failing:{' '}
+          <strong className={riskSummary.criticalFailing > 0 ? 'font-semibold text-status-danger-ink' : 'font-semibold text-ink'}>
+            {riskSummary.criticalFailing}
+          </strong>
+        </span>
+        <span>
+          High failing:{' '}
+          <strong className={riskSummary.highFailing > 0 ? 'font-semibold text-status-amber-ink' : 'font-semibold text-ink'}>
+            {riskSummary.highFailing}
+          </strong>
+        </span>
+        <span>
+          Medium failing: <strong className="font-semibold text-ink">{riskSummary.mediumFailing}</strong>
+        </span>
+        <span>
+          Passing: <strong className="font-semibold text-ink">{riskSummary.passingChecks}</strong>
+        </span>
+        <span>
+          Inconclusive: <strong className="font-semibold text-ink">{riskSummary.inconclusiveChecks}</strong>
+        </span>
       </div>
     </div>
   );

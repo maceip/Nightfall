@@ -76,7 +76,7 @@ export function ScansAuditScreen({
       key: 'subsystem',
       header: 'Subsystem',
       className: 'w-36',
-      cell: (entry) => <StatusBadge status="proposed" label={entry.subsystem} />,
+      cell: (entry) => <span className="font-mono text-xs text-ink-secondary">{entry.subsystem}</span>,
     },
     {
       key: 'action',
@@ -135,9 +135,9 @@ export function ScansAuditScreen({
         <SectionHeader
           title={`Immutable Hash-Chained Audit Ledger (${auditEntries.length} records)`}
           actions={
-            <HStack gap={2} align="center">
+            <HStack gap={1.5} align="center">
               <StatusDot variant="success" label="SHA-256 chain verified" />
-              <StatusBadge status="verified" label="SHA-256 Chain Verified ✓" />
+              <span className="text-xs font-medium text-ink-muted">SHA-256 Chain Verified ✓</span>
             </HStack>
           }
         />

@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { Code } from '@astryxdesign/core/Code';
 import { HStack } from '@astryxdesign/core/HStack';
 import { VStack } from '@astryxdesign/core/VStack';
 import type {
+  FindingRecord,
   FixProposal,
   MantisToolchainStatus,
   OverviewSummary,
@@ -25,6 +26,7 @@ import {
 
 export type OverviewScreenProps = {
   overview: OverviewSummary;
+  findings?: FindingRecord[];
   fixes: FixProposal[];
   scorecardReports?: ScorecardReportRecord[];
   mantisToolchain?: MantisToolchainStatus;
@@ -35,8 +37,11 @@ export type OverviewScreenProps = {
   onNavigateSettings?: () => void;
 };
 
+type TimeframeWindow = 'all' | '30d' | '7d';
+
 export function OverviewScreen({
   overview,
+  findings,
   fixes,
   scorecardReports,
   mantisToolchain,
@@ -46,6 +51,7 @@ export function OverviewScreen({
   onNavigateScorecard,
   onNavigateSettings,
 }: OverviewScreenProps): React.ReactElement {
+  const [timeframe, setTimeframe] = useState<TimeframeWindow>('all');
   const proposedFixes = fixes.filter((f) => f.status === 'proposed').slice(0, 3);
 
   const avgScore =
@@ -53,9 +59,43 @@ export function OverviewScreen({
     Number.isFinite(overview.averageScorecardScore)
       ? overview.averageScorecardScore
       : scorecardReports && scorecardReports.length > 0
-        ? scorecardReports.reduce((sum, r) => sum + (Number.isFinite(r.aggregateScore) ? r.aggregateScore : 0), 0) /
-          scorecardReports.length
+        ? scorecardReports.reduce(
+            (sum, r) => sum + (Number.isFinite(r.aggregateScore) ? r.aggregateScore : 0),
+            0,
+          ) / scorecardReports.length
         : null;
+
+  const windowedCounts = useMemo(() => {
+    if (timeframe === 'all' || !findings) {
+      return {
+        new: overview.statusCounts.new,
+        triaged: overview.statusCounts.triaged,
+        in_progress: overview.statusCounts.in_progress,
+        fixed: overview.fixedFindingsCount,
+      };
+    }
+    const days = timeframe === '7d' ? 7 : 30;
+    const referenceMs = findings.reduce((maxMs, f) => {
+      const parsed = Date.parse(f.updatedAt || f.createdAt);
+      return Number.isFinite(parsed) && parsed > maxMs ? parsed : maxMs;
+    }, 0);
+    const cutoffMs = (referenceMs || Date.now()) - days * 24 * 60 * 60 * 1000;
+
+    const counts = { new: 0, triaged: 0, in_progress: 0, fixed: 0 };
+    for (const f of findings) {
+      const ts = Date.parse(f.updatedAt || f.createdAt);
+      if (Number.isFinite(ts) && ts < cutoffMs) continue;
+      if (f.status === 'new') counts.new += 1;
+      else if (f.status === 'triaged') counts.triaged += 1;
+      else if (f.status === 'in_progress') counts.in_progress += 1;
+      else if (f.status === 'fixed') counts.fixed += 1;
+    }
+    return counts;
+  }, [timeframe, findings, overview]);
+
+  const fixedLabel =
+    timeframe === '30d' ? 'Fixed in last 30d' : timeframe === '7d' ? 'Fixed in last 7d' : 'Fixed';
+  const mantisAvailable = mantisToolchain?.available !== false;
 
   return (
     <VStack id="view-overview" gap={5} className="tabular-nums">
@@ -99,7 +139,7 @@ export function OverviewScreen({
                       </span>
                     ) : null}
                   </div>
-                  <h3 className="m-0 text-[13.5px] font-semibold leading-snug text-ink">
+                  <h3 className="m-0 text-[13.5px] font-semibold leading-snug text-ink text-balance">
                     {fix.title}
                   </h3>
                   <p className="m-0 text-xs text-ink-secondary">
@@ -108,7 +148,7 @@ export function OverviewScreen({
                 </div>
 
                 <HStack justify="between" align="center" gap={2}>
-                  <StatusBadge status="proposed" label="Proposed" />
+                  <span className="text-xs text-ink-muted">{fix.snapshotLabel}</span>
                   <Button
                     id={`btn-overview-review-${fix.id}`}
                     variant="outline"
@@ -133,7 +173,7 @@ export function OverviewScreen({
               className="flex w-full cursor-pointer items-center justify-between gap-3 text-left"
             >
               <div className="flex items-baseline gap-2">
-                <span className="text-[19px] font-semibold tracking-tight text-ink">
+                <span className="text-[19px] font-semibold text-ink">
                   {overview.openFindingsCount}
                 </span>
                 <span className="text-[15px] font-medium text-ink-secondary">Open findings</span>
@@ -155,7 +195,7 @@ export function OverviewScreen({
             >
               <div>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-[19px] font-semibold tracking-tight text-ink">
+                  <span className="text-[19px] font-semibold text-ink">
                     {overview.fixedFindingsCount}
                   </span>
                   <span className="text-[15px] font-medium text-ink-secondary">Fixed findings</span>
@@ -176,7 +216,8 @@ export function OverviewScreen({
           actions={
             <select
               id="select-overview-timeframe"
-              defaultValue="all"
+              value={timeframe}
+              onChange={(e) => setTimeframe(e.target.value as TimeframeWindow)}
               aria-label="Finding status timeframe"
               className="h-8 rounded-full border border-hairline-strong bg-canvas px-3 text-xs font-medium text-ink outline-none"
             >
@@ -193,25 +234,25 @@ export function OverviewScreen({
             {
               key: 'new',
               label: 'New',
-              value: overview.statusCounts.new,
+              value: windowedCounts.new,
               onClick: () => onNavigateFindings(null),
             },
             {
               key: 'triaged',
               label: 'Triaged',
-              value: overview.statusCounts.triaged,
+              value: windowedCounts.triaged,
               onClick: () => onNavigateFindings(null),
             },
             {
               key: 'in_progress',
               label: 'In progress',
-              value: overview.statusCounts.in_progress,
+              value: windowedCounts.in_progress,
               onClick: () => onNavigateFindings(null),
             },
             {
               key: 'fixed',
-              label: 'Fixed in last 7d',
-              value: overview.fixedFindingsCount,
+              label: fixedLabel,
+              value: windowedCounts.fixed,
               onClick: () => onNavigateFixes(),
             },
           ]}
@@ -243,10 +284,11 @@ export function OverviewScreen({
             <MantisClawIcon size={16} className="text-accent-violet" />
             <span className="text-[13px] font-semibold text-ink">Mantis Pipeline</span>
             <Code size="inherit">services/mantis-engine</Code>
-            <StatusBadge
-              status={mantisToolchain?.available !== false ? 'verified' : 'not_recorded'}
-              label={mantisToolchain?.available !== false ? 'Integrated · 20-stage DAG' : 'Engine Unavailable'}
-            />
+            {mantisAvailable ? (
+              <span className="text-xs text-ink-muted">20-stage DAG</span>
+            ) : (
+              <StatusBadge status="verifying" label="Engine Unavailable" />
+            )}
           </HStack>
           <ChevronRightIcon size={15} className="text-ink-muted" />
         </button>

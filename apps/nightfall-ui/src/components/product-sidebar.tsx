@@ -63,7 +63,7 @@ export function ProductSidebar({
       aria-label="Nightfall navigation"
       data-collapsed={collapsed ? 'true' : 'false'}
       className={cn(
-        'flex shrink-0 flex-col justify-between border-r border-hairline bg-sidebar select-none transition-[width] duration-150',
+        'flex shrink-0 flex-col justify-between border-r border-hairline bg-sidebar select-none',
         collapsed ? 'w-14 px-2 py-2.5' : 'w-[236px] px-3 py-2.5',
       )}
     >

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Code } from '@astryxdesign/core/Code';
 import { HStack } from '@astryxdesign/core/HStack';
-import { Token } from '@astryxdesign/core/Token';
 import type { FindingRecord, FixProposal } from '@nightfall/core-contracts';
 import {
   Button,
@@ -204,16 +203,9 @@ export function FindingDetailScreen({
           <span className="text-[13px] text-ink-secondary">{finding.weaknessCwe}</span>
         </MetadataField>
         <MetadataField label="SOURCES">
-          <HStack gap={1.5} wrap="wrap">
-            {finding.sources.map((src) => (
-              <Token
-                key={src}
-                label={formatSourceLabel(src)}
-                size="sm"
-                color={src === 'red-team' ? 'blue' : src === 'scorecard' ? 'green' : 'gray'}
-              />
-            ))}
-          </HStack>
+          <span className="text-[13px] text-ink-secondary">
+            {finding.sources.map((src) => formatSourceLabel(src)).join(' · ')}
+          </span>
         </MetadataField>
         <MetadataField label="OWNER">
           <span className="inline-flex items-center gap-2">

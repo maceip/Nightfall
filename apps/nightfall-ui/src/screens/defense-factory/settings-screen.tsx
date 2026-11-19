@@ -2,7 +2,6 @@ import React from 'react';
 import { Code } from '@astryxdesign/core/Code';
 import { HStack } from '@astryxdesign/core/HStack';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
-import { Token } from '@astryxdesign/core/Token';
 import type {
   MantisToolchainStatus,
   ModelDescriptor,
@@ -11,7 +10,6 @@ import type {
   ScorecardToolchainStatus,
 } from '@nightfall/core-contracts';
 import {
-  Badge,
   Button,
   Card,
   DataTable,
@@ -73,12 +71,12 @@ export function SettingsScreen({
     {
       key: 'provider',
       header: 'Provider',
-      cell: (m) => <Token label={m.provider} size="sm" color="gray" />,
+      cell: (m) => <span className="font-mono text-xs text-ink-secondary">{m.provider}</span>,
     },
     {
       key: 'tier',
       header: 'Routing Tier',
-      cell: (m) => <StatusBadge status="proposed" label={m.tier} />,
+      cell: (m) => <span className="text-xs text-ink-secondary">{m.tier}</span>,
     },
   ];
 
@@ -96,19 +94,22 @@ export function SettingsScreen({
               <span className="text-[14px] font-semibold text-ink">
                 Runtime Connectivity &amp; Emergency Sandbox Control
               </span>
-              <Badge variant={connectedLiveApi ? 'enabled' : 'verifying'}>Live API + SSE</Badge>
+              {!connectedLiveApi ? (
+                <StatusBadge status="verifying" label="Reconnecting…" />
+              ) : (
+                <span className="text-xs text-ink-muted">Live API + SSE</span>
+              )}
             </HStack>
-            <p className="m-0 text-xs text-ink-secondary">
+            <p className="m-0 text-xs text-ink-secondary text-pretty">
               {killSwitchEngaged
                 ? 'Emergency kill-switch engaged — active Red Team probes and sandbox executions are halted.'
                 : 'Real-time orchestrator stream active with L7 egress scope enforcement.'}
             </p>
           </div>
           <HStack gap={2} align="center">
-            <StatusBadge
-              status={killSwitchEngaged ? 'critical' : 'enabled'}
-              label={killSwitchEngaged ? 'Kill-Switch Halted' : 'Sandboxes Active'}
-            />
+            {killSwitchEngaged ? (
+              <StatusBadge status="critical" label="Kill-Switch Halted" />
+            ) : null}
             <Button
               id="btn-emergency-kill-switch"
               variant="destructive"
@@ -134,31 +135,32 @@ export function SettingsScreen({
           title="Microsoft LiteBox Library OS Sandbox"
           subtitle="Reduced-TCB user-mode library OS isolation for Red Team probes & Defense Factory patch verification"
           actions={
-            <StatusBadge
-              status={liteboxAvailable ? 'verified' : 'in_progress'}
-              label={liteboxAvailable ? 'LiteBox Binaries Ready ✓' : 'Process-Confined Fallback'}
-            />
+            liteboxAvailable ? (
+              <span className="text-xs font-medium text-ink-muted">LiteBox Binaries Ready ✓</span>
+            ) : (
+              <StatusBadge status="in_progress" label="Process-Confined Fallback" />
+            )
           }
         />
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <ToolchainSpec label="North Shim" value={northShim} mono />
-          <ToolchainSpec label="South Platform" value={southPlatform} mono />
-          <ToolchainSpec label="Pinned Commit" value={pinnedCommit.slice(0, 12)} mono />
-          <ToolchainSpec label="Upstream Repository" value={upstreamRepo} mono />
+        <div className="grid grid-cols-1 divide-y divide-hairline overflow-hidden rounded-xl border border-hairline sm:grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-y-0">
+          <ToolchainSpec label="North shim" value={northShim} mono />
+          <ToolchainSpec label="South platform" value={southPlatform} mono />
+          <ToolchainSpec label="Pinned commit" value={pinnedCommit.slice(0, 12)} mono />
+          <ToolchainSpec label="Upstream repository" value={upstreamRepo} mono />
         </div>
 
         {sandboxToolchain ? (
-          <div className="grid grid-cols-1 gap-2 rounded-xl border border-hairline bg-sidebar p-3 text-xs text-ink-secondary md:grid-cols-2">
-            <div className="truncate">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-3 text-xs text-ink-secondary">
+            <span className="truncate">
               Runner: <span className="font-mono text-ink">{sandboxToolchain.runnerBinaryPath ?? 'not-compiled'}</span>
-            </div>
-            <div className="truncate">
-              Syscall Rewriter:{' '}
+            </span>
+            <span className="truncate">
+              Syscall rewriter:{' '}
               <span className="font-mono text-ink">
                 {sandboxToolchain.syscallRewriterBinaryPath ?? 'not-compiled'}
               </span>
-            </div>
+            </span>
           </div>
         ) : null}
       </Card>
@@ -168,58 +170,62 @@ export function SettingsScreen({
           title="Nightfall Scorecard Supply-Chain Engine"
           subtitle="Vendored & fused OSSF Scorecard Go daemon evaluating CI workflow injection, token permissions, and supply-chain checks"
           actions={
-            <StatusBadge
-              status={scAvailable ? 'verified' : 'not_recorded'}
-              label={scAvailable ? `Scorecard ${scMode} Ready ✓` : 'Scorecard Binary Not Built'}
-            />
+            scAvailable ? (
+              <span className="text-xs font-medium text-ink-muted">Scorecard {scMode} Ready ✓</span>
+            ) : (
+              <StatusBadge status="verifying" label="Scorecard Binary Not Built" />
+            )
           }
         />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <ToolchainSpec label="Service Mode" value={scMode} mono />
-          <ToolchainSpec label="Vendored Tree" value={scorecardToolchain?.vendoredPath ?? 'vendor/scorecard'} mono />
+        <div className="grid grid-cols-1 divide-y divide-hairline overflow-hidden rounded-xl border border-hairline sm:grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-y-0">
+          <ToolchainSpec label="Service mode" value={scMode} mono />
+          <ToolchainSpec label="Vendored tree" value={scorecardToolchain?.vendoredPath ?? 'vendor/scorecard'} mono />
           <ToolchainSpec
-            label="Pinned Commit"
+            label="Pinned commit"
             value={(scorecardToolchain?.pinnedCommit ?? '6eb56f6a7e62').slice(0, 12)}
             mono
           />
           <ToolchainSpec
-            label="Upstream Repository"
+            label="Upstream repository"
             value={scorecardToolchain?.upstreamRepo ?? 'https://github.com/ossf/scorecard'}
             mono
           />
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card className="space-y-2 border-hairline bg-canvas p-5">
+      <div className="grid grid-cols-1 divide-y divide-hairline overflow-hidden rounded-2xl border border-hairline bg-canvas md:grid-cols-2 md:divide-x md:divide-y-0">
+        <div className="space-y-1.5 p-5">
           <HStack justify="between" align="center">
-            <span className="text-[14px] font-semibold text-ink">
-              SQLite Persistence &amp; Audit Ledger
-            </span>
-            <StatusBadge status="verified" label="WAL Durable ✓" />
+            <HStack gap={1.5} align="center">
+              <StatusDot variant="success" label="SQLite ledger active" />
+              <span className="text-[14px] font-semibold text-ink">
+                SQLite Persistence &amp; Audit Ledger
+              </span>
+            </HStack>
+            <span className="font-mono text-xs text-ink-muted">{auditEntryCount} entries</span>
           </HStack>
-          <p className="m-0 text-[13px] text-ink-secondary">
-            Append-only SHA-256 hash-chained ledger and shared campaign memory backed by durable
-            SQLite state ({auditEntryCount} verified audit entries).
+          <p className="m-0 text-[13px] text-ink-secondary text-pretty">
+            Append-only SHA-256 hash-chained ledger and shared campaign memory persisted in SQLite.
           </p>
-        </Card>
+        </div>
 
-        <Card className="space-y-2 border-hairline bg-canvas p-5">
+        <div className="space-y-1.5 p-5">
           <HStack justify="between" align="center">
             <span className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-ink">
-              <ShieldCheckIcon size={16} className="text-status-mint-ink" />
+              <ShieldCheckIcon size={16} className="text-ink-secondary" />
               <span>L7 Egress Policy Proxy</span>
             </span>
-            <StatusBadge
-              status={killSwitchEngaged ? 'critical' : 'enabled'}
-              label={killSwitchEngaged ? 'Kill-Switch Halted' : 'Enforcing v5 Scope'}
-            />
+            {killSwitchEngaged ? (
+              <StatusBadge status="critical" label="Kill-Switch Halted" />
+            ) : (
+              <span className="text-xs text-ink-muted">Enforcing v5 scope</span>
+            )}
           </HStack>
-          <p className="m-0 text-[13px] text-ink-secondary">
+          <p className="m-0 text-[13px] text-ink-secondary text-pretty">
             Cryptographically Ed25519-signed <Code size="inherit">campaign.yaml</Code> manifests
             enforce strict HTTP method/path allowlists, WebSocket origins, and token-bucket RPS caps.
           </p>
-        </Card>
+        </div>
       </div>
 
       <section className="space-y-3">
@@ -259,8 +265,8 @@ function ToolchainSpec({
   mono?: boolean;
 }): React.ReactElement {
   return (
-    <div className="rounded-xl border border-hairline bg-sidebar p-3">
-      <div className="text-[11px] font-medium uppercase tracking-wider text-ink-muted">{label}</div>
+    <div className="p-3.5">
+      <div className="text-xs font-medium text-ink-muted">{label}</div>
       <div className={`mt-1 truncate text-xs text-ink ${mono ? 'font-mono' : 'font-medium'}`}>
         {value}
       </div>
