@@ -698,6 +698,9 @@ class TestUntrustedContentFramingAndScrubbing(unittest.IsolatedAsyncioTestCase):
             "find_callers",
             "find_callees",
             "get_function_boundary",
+            "get_function_audit",
+            "summarize_function_audits",
+            "codenav_query",
         }
         returns_harness = {
             "write_file",
@@ -723,6 +726,7 @@ class TestUntrustedContentFramingAndScrubbing(unittest.IsolatedAsyncioTestCase):
             "query_lineage",
             "record_regression_check",
             "get_prior_poc",
+            "record_function_audit",
         }
 
         classified = returns_untrusted | returns_harness

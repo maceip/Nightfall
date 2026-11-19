@@ -596,7 +596,7 @@ cut still counts; only silence from a cut trace is refused.
 
 ## Custom Tools
 
-The 31 built-in tools are a closed set, and a workflow naming anything else
+The 35 built-in tools are a closed set, and a workflow naming anything else
 fails validation. Without a way in, a site with an internal taint engine or a
 house SAST tool has exactly one option: fork. A fork never receives the next
 security fix, so leaving the set closed does not prevent custom tools — it makes
@@ -604,7 +604,7 @@ the unsafe way the only way.
 
 ### Why a declared tool inherits no trust
 
-The built-in 31 are not safe because they are confined. Most run on the host
+The built-in 35 are not safe because they are confined. Most run on the host
 with the host's full privilege: nothing in the process stops `read_file` from
 opening `~/.ssh/id_rsa`. They are safe because they **are** the enforcement —
 `read_file` is the containment for reads, `run_sandbox` for execution,

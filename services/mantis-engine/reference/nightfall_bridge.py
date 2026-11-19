@@ -31,6 +31,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 EXPORT_FORMAT = "mantis-nightfall/v1"
+EVIDENCE_GATE_VERSION = "v1"
 
 _FALSE_POSITIVE = {"false_positive", "non_viable", "sample_or_test", "accepted_risk"}
 # Mantis's own proof and patch verdicts come from Mantis's sandbox, not from
@@ -40,7 +41,53 @@ _TRIAGED = {"confirmed", "viable", "static_confirmed", "reproduced", "dynamic_co
             "patch_verified", "mitigated"}
 _SKIPPED = {"duplicate_merged", "archived"}
 _SEVERITIES = {"critical", "high", "medium", "low"}
+_SEVERITY_ORDER = ("informational", "low", "medium", "high", "critical")
+_SEVERITY_RANK = {name: idx for idx, name in enumerate(_SEVERITY_ORDER)}
 _LOCATION = re.compile(r"^(?P<file>[^:]+):(?P<start>\d+)(?:-(?P<end>\d+))?(?::.*)?$")
+
+# Mechanical anti-fabrication patterns for synthetic sanitizer/crash claims.
+_PLACEHOLDER_ASAN_PID = re.compile(
+    r"==(?:1|42|99|1234|12345|99999)==ERROR:\s*(?:Address|Leak|Thread|UndefinedBehavior)Sanitizer:",
+    re.IGNORECASE,
+)
+_THEORETICAL_SANITIZER = re.compile(
+    r"(?:Address|Leak|Thread|UndefinedBehavior)Sanitizer:[^\n]*\(theoretical\)",
+    re.IGNORECASE,
+)
+_ELLIPSIS_SANITIZER_SUMMARY = re.compile(
+    r"SUMMARY:\s*(?:Address|Leak|Thread|UndefinedBehavior)Sanitizer:[^\n]*\.\.\.",
+    re.IGNORECASE,
+)
+_ZERO_CRASH_ADDR = re.compile(r"on (?:unknown )?address 0x0+(?:\s|$)")
+_HARNESS_SUMMARY_FRAME = re.compile(
+    r"SUMMARY:\s*(?:Address|Leak|Thread|UndefinedBehavior)Sanitizer:\s*\S+\s+\S*(?:/|^)"
+    r"(?:harness|poc|trigger|test_harness|poc_\w+|trigger_\w+|harness_\w+|\w+_harness|\w+_poc|\w+_trigger)\b",
+    re.IGNORECASE,
+)
+
+
+def _cap_severity(current: str, ceiling: str) -> str:
+    if _SEVERITY_RANK.get(current, 2) > _SEVERITY_RANK.get(ceiling, 2):
+        return ceiling
+    return current
+
+
+def inspect_mechanical_evidence_violations(text: str) -> list[tuple[str, str]]:
+    """Returns `(reason, severity_ceiling)` pairs for fabricated sanitizer or harness claims."""
+    if not text:
+        return []
+    hits: list[tuple[str, str]] = []
+    if _THEORETICAL_SANITIZER.search(text):
+        hits.append(("sanitizer banner self-labelled '(theoretical)'", "low"))
+    if _PLACEHOLDER_ASAN_PID.search(text):
+        hits.append(("placeholder sanitizer PID in crash banner", "medium"))
+    if _ELLIPSIS_SANITIZER_SUMMARY.search(text):
+        hits.append(("truncated '...' frame in sanitizer SUMMARY", "medium"))
+    if _ZERO_CRASH_ADDR.search(text):
+        hits.append(("all-zero synthetic crash address", "medium"))
+    if _HARNESS_SUMMARY_FRAME.search(text):
+        hits.append(("sanitizer SUMMARY crash frame lands in self-authored harness/poc", "medium"))
+    return hits
 
 
 def _severity(raw: Any) -> str:
@@ -131,24 +178,78 @@ def finding_id(repository: str, run_id: str, row_id: Any) -> str:
     return f"MANTIS-{digest[:12].upper()}"
 
 
-def to_finding_record(row: dict[str, Any], *, repository: str, revision: str) -> dict[str, Any]:
+def to_finding_record(
+    row: dict[str, Any],
+    *,
+    repository: str,
+    revision: str,
+    target_root: Optional[str] = None,
+) -> dict[str, Any]:
     """One Mantis finding row as a Nightfall FindingRecord (without ``owner``)."""
     run_id = str(row.get("run_id") or "")
-    raw_status = str(row.get("status") or "reported").lower()
+    raw_status = str(row.get("status") or "reported").strip().lower()
     fid = finding_id(repository, run_id, row.get("id"))
     description = str(row.get("description") or "").strip()
     title = str(row.get("title") or "").strip() or "Untitled Mantis finding"
     cwe = str(row.get("cwe") or "").strip()
     cluster_seed = row.get("lineage_id") or row.get("signature") or f"{cwe}:{row.get('filepath')}:{title}"
     sources = ["nightfall", "sast"]
+    sev = _severity(row.get("severity"))
+    mapped_status = _status(raw_status)
+    refs = _code_references(row)
+    gate_notes: list[str] = []
+
+    # 1. Status-tier severity ceilings (contested <= high, unconfirmed <= medium, theoretical <= low).
+    status_ceilings = {
+        "contested": "high",
+        "unconfirmed": "medium",
+        "theoretical": "low",
+    }
+    if raw_status in status_ceilings:
+        ceiling = status_ceilings[raw_status]
+        capped = _cap_severity(sev, ceiling)
+        if capped != sev:
+            gate_notes.append(f"Evidence gate: '{raw_status}' caps severity {sev} -> {capped}")
+            sev = capped
+
+    # 2. Mechanical anti-fabrication gate over crash/sanitizer claims.
+    combined_prose = "\n".join(
+        str(row.get(k) or "") for k in ("description", "rca_summary", "triage_reasoning")
+    )
+    for reason, ceiling in inspect_mechanical_evidence_violations(combined_prose):
+        sev = _cap_severity(sev, ceiling)
+        if mapped_status == "triaged":
+            mapped_status = "new"
+        gate_notes.append(f"Evidence gate rejected dynamic claim ({reason})")
+
+    # 3. Target-root file anchor check: confirmed/triaged claims must resolve on disk when target_root exists.
+    if (
+        mapped_status == "triaged"
+        and refs
+        and target_root
+        and os.path.isdir(target_root)
+    ):
+        real_root = os.path.realpath(target_root)
+        any_exists = False
+        for ref in refs:
+            rel = str(ref.get("file") or "").lstrip("/")
+            cand = os.path.realpath(os.path.join(real_root, rel))
+            if (cand == real_root or cand.startswith(real_root + os.sep)) and os.path.isfile(cand):
+                any_exists = True
+                break
+        if not any_exists:
+            mapped_status = "new"
+            sev = _cap_severity(sev, "medium")
+            gate_notes.append("Evidence gate: cited file anchor(s) missing under target root")
+
     record: dict[str, Any] = {
         "id": fid,
         "title": title,
         "subtitle": f"{repository} · {fid} · Discovered by Mantis ({raw_status})",
         "repository": repository,
         "observedRevision": revision,
-        "severity": _severity(row.get("severity")),
-        "status": _status(raw_status),
+        "severity": sev,
+        "status": mapped_status,
         "fixVerification": _fix_verification(raw_status, row.get("patch_status")),
         "weaknessCwe": cwe,
         "sources": sources,
@@ -157,15 +258,19 @@ def to_finding_record(row: dict[str, Any], *, repository: str, revision: str) ->
         "impactAndAttackPath": str(row.get("triage_reasoning") or ""),
         "preconditions": [],
         "remediation": str(row.get("remediation") or ""),
-        "codeReferences": _code_references(row),
+        "codeReferences": refs,
         "rootCauseClusterKey": f"{repository}:mantis:{cluster_seed}",
         "createdAt": _iso(row.get("timestamp")),
         "updatedAt": _iso(row.get("timestamp")),
     }
     if row.get("triage_reasoning"):
         record["verificationChainSummary"] = str(row["triage_reasoning"])
+    notes: list[str] = []
     if row.get("patch_status"):
-        record["defectsNotes"] = f"Mantis patch status: {row['patch_status']}"
+        notes.append(f"Mantis patch status: {row['patch_status']}")
+    notes.extend(gate_notes)
+    if notes:
+        record["defectsNotes"] = "; ".join(notes)
     return record
 
 
@@ -264,6 +369,7 @@ def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional
         recorded = run_target_root(db_path, rid)
         if recorded is not None and recorded != _root(target):
             raise RunTargetMismatchError(f"Mantis run {rid} scanned {recorded}, not {_root(target)}")
+    effective_target = _root(target) if target else run_target_root(db_path, rid)
     findings: list[dict[str, Any]] = []
     if rid:
         with sqlite3.connect(db_path) as conn:
@@ -275,7 +381,14 @@ def export_run(db_path: str, *, repository: str, revision: str, run_id: Optional
             row = dict(r)
             if str(row.get("status") or "").lower() in _SKIPPED or row.get("merged_into_id"):
                 continue
-            findings.append(to_finding_record(row, repository=repository, revision=revision))
+            findings.append(
+                to_finding_record(
+                    row,
+                    repository=repository,
+                    revision=revision,
+                    target_root=effective_target,
+                )
+            )
     return {"format": EXPORT_FORMAT, "runId": rid, "repository": repository,
             "observedRevision": revision, "findings": findings}
 

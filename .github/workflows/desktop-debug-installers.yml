@@ -75,6 +75,9 @@ jobs:
       - name: Build vendored Nightfall Scorecard Go engine
         run: pnpm build:scorecard
 
+      - name: Build vendored codenav C++20 semantic indexer
+        run: pnpm build:codenav
+
       - name: Generate desktop icon & DMG assets
         run: node scripts/generate-desktop-icons.mjs
 

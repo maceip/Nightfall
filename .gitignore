@@ -6,6 +6,8 @@ build/
 !apps/nightfall-ui/build/**
 apps/nightfall-ui/bundled-tools/
 vendor/scorecard/bin/
+vendor/codenav/bin/
+vendor/codenav/codenav
 out/
 release/
 *.tsbuildinfo

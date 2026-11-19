@@ -51,6 +51,12 @@ from .structural_tools import (
     find_callees,
     get_function_boundary,
 )
+from .function_audit_tools import (
+    record_function_audit,
+    get_function_audit,
+    summarize_function_audits,
+    codenav_query,
+)
 
 TOOLS: dict[str, object] = {
     "read_file": read_file,
@@ -84,4 +90,8 @@ TOOLS: dict[str, object] = {
     "find_callers": find_callers,
     "find_callees": find_callees,
     "get_function_boundary": get_function_boundary,
+    "record_function_audit": record_function_audit,
+    "get_function_audit": get_function_audit,
+    "summarize_function_audits": summarize_function_audits,
+    "codenav_query": codenav_query,
 }

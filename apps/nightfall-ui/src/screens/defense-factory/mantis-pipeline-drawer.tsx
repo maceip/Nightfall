@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Code } from '@astryxdesign/core/Code';
 import { Divider } from '@astryxdesign/core/Divider';
 import { HStack } from '@astryxdesign/core/HStack';
@@ -72,6 +72,12 @@ export function MantisPipelineDrawer({
   const [scanMode, setScanMode] = useState<MantisScanMode>('shadow-worktree-patch');
   const [seedSastJsonl, setSeedSastJsonl] = useState<boolean>(true);
   const [copiedCli, setCopiedCli] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (selectedRepo && selectedRepo !== 'all') {
+      setRepoName(selectedRepo);
+    }
+  }, [selectedRepo]);
 
   const repoRecord = repositories.find((r) => r.name === repoName);
   const localPath = repoRecord?.localPath ?? `/workspace/${repoName}`;

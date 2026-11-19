@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { Code } from '@astryxdesign/core/Code';
 import { HStack } from '@astryxdesign/core/HStack';
 import { StatusDot } from '@astryxdesign/core/StatusDot';
-import { Token } from '@astryxdesign/core/Token';
 import {
+  CODENAV_PINNED_COMMIT,
+  FNAUDIT_PINNED_COMMIT,
   MANTIS_DEPTH_TIER_PRESETS,
   MANTIS_REFERENCE_PIPELINE_STAGES,
   MANTIS_UPSTREAM_REPO,
@@ -25,51 +26,16 @@ export type MantisIntegrationCardProps = {
   selectedRepo?: string;
 };
 
-const FUSED_SEAMS: ReadonlyArray<{
+type LiveCapabilityRow = {
   id: string;
-  stageNode: string;
   title: string;
-  verdictToken: string;
-  tokenColor: 'blue' | 'purple' | 'green' | 'orange';
+  ready: boolean;
+  readyLabel: string;
+  missingLabel: string;
+  anchorLabel: string;
+  anchorValue: string;
   detail: string;
-}> = [
-  {
-    id: 'seam-sast-seed',
-    stageNode: 'planner',
-    title: 'SAST & Scorecard JSONL Seed',
-    verdictToken: 'sast_findings.jsonl',
-    tokenColor: 'blue',
-    detail:
-      'Feeds Nightfall RepositoryScanner & Scorecard findings directly into the Mantis planner hypothesis graph.',
-  },
-  {
-    id: 'seam-red-team',
-    stageNode: 'reproducer / chainer',
-    title: 'Tier 1–3 PoC → Tier 4 Live Red Team',
-    verdictToken: 'Tier 4 Handoff',
-    tokenColor: 'purple',
-    detail:
-      'Promotes sandboxed PoC traces and multi-step exploit chains into Ed25519 scope-signed Nightfall Red Team replay.',
-  },
-  {
-    id: 'seam-patcher',
-    stageNode: 'patcher',
-    title: 'Shadow-Worktree Patch → Defense Factory',
-    verdictToken: 'VERIFIED_SECURE',
-    tokenColor: 'green',
-    detail:
-      'Routes VERIFIED_SECURE shadow-worktree patches into the Nightfall Defense Factory Fix review queue.',
-  },
-  {
-    id: 'seam-mcp-gate',
-    stageNode: 'reviewer',
-    title: 'Pre-Merge MCP Change Gate',
-    verdictToken: 'PASS | REVIEW | BLOCK',
-    tokenColor: 'orange',
-    detail:
-      'Exposes mantis_check_change verdicts across pull-request diffs and CI pre-merge policy gates.',
-  },
-];
+};
 
 export function MantisIntegrationCard({
   mantisToolchain,
@@ -77,7 +43,62 @@ export function MantisIntegrationCard({
   selectedRepo,
 }: MantisIntegrationCardProps): React.ReactElement {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const mantisAvailable = mantisToolchain?.available ?? true;
+  const mantisAvailable = mantisToolchain?.available ?? false;
+  const fnauditReady = mantisToolchain?.fnauditAvailable ?? false;
+  const codenavReady = mantisToolchain?.codenavAvailable ?? false;
+  const evidenceGateReady = mantisToolchain?.evidenceGateEnabled ?? false;
+
+  const fnauditCommit = (mantisToolchain?.fnauditPinnedCommit ?? FNAUDIT_PINNED_COMMIT).slice(0, 12);
+  const codenavCommit = (mantisToolchain?.codenavPinnedCommit ?? CODENAV_PINNED_COMMIT).slice(0, 12);
+  const codenavBinary = mantisToolchain?.codenavBinaryPath ?? 'not-compiled';
+  const pythonExec = mantisToolchain?.pythonExecutable ?? 'not-detected';
+
+  const capabilities: ReadonlyArray<LiveCapabilityRow> = [
+    {
+      id: 'cap-fnaudit-ledger',
+      title: 'fnaudit Per-Symbol Intent Ledger',
+      ready: fnauditReady,
+      readyLabel: 'SQLite + FTS5 Ready',
+      missingLabel: 'Module Missing',
+      anchorLabel: 'Pinned Apache-2.0',
+      anchorValue: fnauditCommit,
+      detail:
+        'Records body_sha-verified per-function intent vs. implementation audits and 800-token ranked module briefings across explorer and researcher.',
+    },
+    {
+      id: 'cap-codenav-cpp',
+      title: 'codenav C++20 Semantic Navigator',
+      ready: codenavReady,
+      readyLabel: 'Binary Ready',
+      missingLabel: 'Not Compiled',
+      anchorLabel: `Commit ${codenavCommit}`,
+      anchorValue: codenavBinary,
+      detail:
+        'Executes read-only C/C++ callgraph, struct layout, and override queries over KDAB Woboq datasets, falling back to tree-sitter StructuralIndex.',
+    },
+    {
+      id: 'cap-evidence-gate',
+      title: 'Mechanical Evidence & Anti-Fabrication Gate',
+      ready: evidenceGateReady,
+      readyLabel: 'Enforcing Gate',
+      missingLabel: 'Bridge Offline',
+      anchorLabel: 'Bridge',
+      anchorValue: 'nightfall_bridge.py',
+      detail:
+        'Rejects placeholder sanitizer PIDs and missing target-root file anchors while enforcing contested <= high, unconfirmed <= medium, and theoretical <= low ceilings.',
+    },
+    {
+      id: 'cap-static-pin',
+      title: 'Static-Only Bridge → LiteBox Proof Chain',
+      ready: mantisAvailable,
+      readyLabel: 'Static-Only Pinned',
+      missingLabel: 'Runtime Missing',
+      anchorLabel: 'Python Runtime',
+      anchorValue: pythonExec,
+      detail:
+        'Pins Mantis subprocess execution to --sandbox static-only so dynamic exploit and patch proofs execute exclusively inside Nightfall LiteBox.',
+    },
+  ];
 
   return (
     <>
@@ -115,22 +136,26 @@ export function MantisIntegrationCard({
         />
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          {FUSED_SEAMS.map((seam) => (
+          {capabilities.map((cap) => (
             <div
-              key={seam.id}
+              key={cap.id}
+              id={cap.id}
               className="space-y-1.5 rounded-xl border border-hairline bg-sidebar p-3.5"
             >
               <HStack justify="between" align="center" wrap="wrap" gap={1.5}>
                 <HStack gap={1.5} align="center">
-                  <StatusDot variant="accent" label={seam.title} />
-                  <span className="text-[13px] font-semibold text-ink">{seam.title}</span>
+                  <StatusDot variant={cap.ready ? 'success' : 'warning'} label={cap.title} />
+                  <span className="text-[13px] font-semibold text-ink">{cap.title}</span>
                 </HStack>
-                <Token label={seam.verdictToken} size="sm" color={seam.tokenColor} />
+                <StatusBadge
+                  status={cap.ready ? 'proposed' : 'verifying'}
+                  label={cap.ready ? cap.readyLabel : cap.missingLabel}
+                />
               </HStack>
-              <div className="text-[11.5px] text-ink-muted">
-                Stage node: <Code size="inherit">{seam.stageNode}</Code>
+              <div className="truncate text-[11.5px] text-ink-muted">
+                {cap.anchorLabel}: <Code size="inherit">{cap.anchorValue}</Code>
               </div>
-              <p className="m-0 text-xs leading-relaxed text-ink-secondary">{seam.detail}</p>
+              <p className="m-0 text-xs leading-relaxed text-ink-secondary">{cap.detail}</p>
             </div>
           ))}
         </div>

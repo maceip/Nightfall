@@ -172,6 +172,81 @@ class NightfallBridgeTest(unittest.TestCase):
                 conn.execute("INSERT INTO runs (run_id) VALUES ('x2')")
             nightfall_bridge._scanned_run_id(self.db, {"run-0", "run-1"}, [], self.tmp)
 
+    def test_mechanical_evidence_gate_rejects_fabricated_sanitizer_and_caps_tiers(self):
+        write_findings(self.db, "src/buf.c", [
+            {
+                "title": "Heap overflow with placeholder ASan PID",
+                "severity": "CRITICAL",
+                "description": "==1234==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x602000000014\nSUMMARY: AddressSanitizer: heap-buffer-overflow ...",
+                "filepath": "src/buf.c",
+                "line_numbers": [15],
+                "cwe": "CWE-122",
+            },
+            {
+                "title": "Contested UAF",
+                "severity": "CRITICAL",
+                "description": "Disputed lifetime.",
+                "filepath": "src/buf.c",
+                "line_numbers": [20],
+            },
+            {
+                "title": "Theoretical race",
+                "severity": "HIGH",
+                "description": "Unverified schedule.",
+                "filepath": "src/buf.c",
+                "line_numbers": [30],
+            },
+        ], run_id="run-gate")
+        rows = self._rows("run-gate")
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE findings SET status='dynamic_confirmed' WHERE id=?", (rows[0],))
+            conn.execute("UPDATE findings SET status='contested' WHERE id=?", (rows[1],))
+            conn.execute("UPDATE findings SET status='theoretical' WHERE id=?", (rows[2],))
+
+        doc = nightfall_bridge.export_run(self.db, repository="acme/native", revision="f00baa", run_id="run-gate")
+        by_title = {f["title"]: f for f in doc["findings"]}
+
+        fake_asan = by_title["Heap overflow with placeholder ASan PID"]
+        self.assertEqual(fake_asan["status"], "new", "fabricated ASan PID must not promote to triaged")
+        self.assertEqual(fake_asan["severity"], "medium")
+        self.assertIn("placeholder sanitizer PID", fake_asan.get("defectsNotes", ""))
+
+        contested = by_title["Contested UAF"]
+        self.assertEqual(contested["severity"], "high")
+        self.assertIn("contested", contested.get("defectsNotes", ""))
+
+        theoretical = by_title["Theoretical race"]
+        self.assertEqual(theoretical["severity"], "low")
+
+    def test_mechanical_evidence_gate_demotes_triaged_finding_with_missing_target_files(self):
+        target_dir = os.path.join(self.tmp, "checked-out-repo")
+        os.makedirs(target_dir, exist_ok=True)
+        with sqlite3.connect(self.db) as conn:
+            conn.execute(
+                "INSERT INTO runs (run_id, started, metadata_json) VALUES ('run-phantom', '2999-02-01', ?)",
+                (json.dumps({"target_root": target_dir}),),
+            )
+        write_findings(self.db, "ghost/nonexistent.c", [
+            {
+                "title": "Phantom confirmed bug",
+                "severity": "CRITICAL",
+                "description": "Cites a file absent from target_root.",
+                "filepath": "ghost/nonexistent.c",
+                "line_numbers": [10],
+            }
+        ], run_id="run-phantom")
+        phantom_id = self._rows("run-phantom")[0]
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE findings SET status='static_confirmed' WHERE id=?", (phantom_id,))
+
+        doc = nightfall_bridge.export_run(
+            self.db, repository="acme/native", revision="deadbeef", run_id="run-phantom", target=target_dir
+        )
+        finding = doc["findings"][0]
+        self.assertEqual(finding["status"], "new")
+        self.assertEqual(finding["severity"], "medium")
+        self.assertIn("missing under target root", finding.get("defectsNotes", ""))
+
 
 class NightfallBridgeScanTest(unittest.TestCase):
     """The scan command, driving a stand-in for main.py placed next to a copy of the bridge."""

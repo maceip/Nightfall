@@ -195,6 +195,10 @@ async function ensureEmbeddedApiServer(): Promise<string> {
       if (existsSync(bundledScorecardBin)) {
         process.env.NIGHTFALL_SCORECARD_BIN_DIR ||= bundledScorecardBin;
       }
+      const bundledCodenavBin = join(process.resourcesPath, 'tools', 'codenav', 'bin');
+      if (existsSync(bundledCodenavBin)) {
+        process.env.NIGHTFALL_CODENAV_BIN_DIR ||= bundledCodenavBin;
+      }
       const bundledMantisRef = join(process.resourcesPath, 'tools', 'mantis', 'reference');
       if (existsSync(join(bundledMantisRef, 'nightfall_bridge.py'))) {
         process.env.NIGHTFALL_MANTIS_ENGINE_DIR ||= bundledMantisRef;

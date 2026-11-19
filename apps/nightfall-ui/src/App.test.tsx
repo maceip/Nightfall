@@ -107,6 +107,9 @@ describe('@nightfall/nightfall-ui + @nightfall/ui-kit over real HTTP server', ()
       expect(screen.getByText('daemon-http')).toBeTruthy();
       expect(screen.getByText('Mantis Autonomous Vulnerability Pipeline')).toBeTruthy();
       expect(screen.getByText('Mantis Engine Integrated ✓')).toBeTruthy();
+      expect(screen.getByText('fnaudit Per-Symbol Intent Ledger')).toBeTruthy();
+      expect(screen.getByText('codenav C++20 Semantic Navigator')).toBeTruthy();
+      expect(screen.getByText('Mechanical Evidence & Anti-Fabrication Gate')).toBeTruthy();
     });
     fireEvent.click(document.querySelector('#btn-open-mantis-pipeline-drawer')!);
     await waitFor(() => {

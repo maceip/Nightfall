@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 export const MANTIS_UPSTREAM_REPO = 'https://github.com/maceip/mantis' as const;
+export const FNAUDIT_UPSTREAM_REPO = 'https://github.com/thomasdullien/fnaudit' as const;
+export const FNAUDIT_PINNED_COMMIT = '686c309a04debc2cd76db228b3c52e22afc7fce4' as const;
+export const CODENAV_UPSTREAM_REPO = 'https://github.com/thomasdullien/codenav' as const;
+export const CODENAV_PINNED_COMMIT = '670a3f3ca515bf17de6a43f338efca32af3ad0d2' as const;
 
 export const MantisDepthTierSchema = z.enum([
   'tier-1-fast',
@@ -37,6 +41,12 @@ export const MantisToolchainStatusSchema = z.object({
   sandboxMode: z.literal('static-only'),
   upstreamRepo: z.string(),
   stageCount: z.number().int().positive(),
+  fnauditAvailable: z.boolean().default(false),
+  fnauditPinnedCommit: z.string().default(FNAUDIT_PINNED_COMMIT),
+  codenavAvailable: z.boolean().default(false),
+  codenavBinaryPath: z.string().nullable().default(null),
+  codenavPinnedCommit: z.string().default(CODENAV_PINNED_COMMIT),
+  evidenceGateEnabled: z.boolean().default(false),
 });
 export type MantisToolchainStatus = z.infer<typeof MantisToolchainStatusSchema>;
 

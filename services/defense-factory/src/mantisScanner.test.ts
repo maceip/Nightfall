@@ -125,4 +125,41 @@ describe('MantisScanner', () => {
       scanner.exportRun({ repository: 'asset-servicing', dbPath, observedRevision: 'a1b2c3d', runId: 'no-such-run' }),
     ).rejects.toThrow(/Mantis run not found/);
   });
+
+  it('discovers vendored Apache-2.0 fnaudit + codenav toolchains and enforces mechanical anti-fabrication gate', async () => {
+    const scanner = new MantisScanner({ pythonExecutable: PYTHON });
+    const status = scanner.getToolchainStatus();
+    expect(status.available).toBe(true);
+    expect(status.fnauditAvailable).toBe(true);
+    expect(status.evidenceGateEnabled).toBe(true);
+    expect(status.fnauditPinnedCommit).toMatch(/^[0-9a-f]{40}$/);
+    expect(status.codenavPinnedCommit).toMatch(/^[0-9a-f]{40}$/);
+
+    const gateDb = path.join(tmp, 'gate.db');
+    const seedGateScript = `
+import sys, sqlite3
+sys.path.insert(0, ${JSON.stringify(DEFAULT_MANTIS_ENGINE_DIR)})
+from core.database import init_db, write_findings
+db = sys.argv[1]
+init_db(db)
+write_findings(db, "src/parse.c", [
+    {"title": "Synthetic ASan claim", "severity": "CRITICAL", "cwe": "CWE-787",
+     "description": "==1234==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x602000000010",
+     "filepath": "src/parse.c", "line_numbers": [18]},
+], run_id="run-gate-ts")
+with sqlite3.connect(db) as conn:
+    conn.execute("UPDATE findings SET status='dynamic_confirmed' WHERE run_id='run-gate-ts'")
+`;
+    await execFileAsync(PYTHON, ['-c', seedGateScript, gateDb], { timeout: 60_000 });
+    const exported = await scanner.exportRun({
+      repository: 'acme/native-parser',
+      dbPath: gateDb,
+      observedRevision: '998877a',
+      runId: 'run-gate-ts',
+    });
+    expect(exported).toHaveLength(1);
+    expect(exported[0]?.status).toBe('new');
+    expect(exported[0]?.severity).toBe('medium');
+    expect(exported[0]?.defectsNotes).toContain('placeholder sanitizer PID');
+  });
 });

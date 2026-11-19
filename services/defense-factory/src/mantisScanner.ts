@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import {
+  CODENAV_PINNED_COMMIT,
+  FNAUDIT_PINNED_COMMIT,
   FindingRecordSchema,
   MANTIS_REFERENCE_PIPELINE_STAGES,
   MANTIS_UPSTREAM_REPO,
@@ -57,6 +59,27 @@ export function resolveDefaultMantisPython(engineDir: string = DEFAULT_MANTIS_EN
   return 'python3';
 }
 
+export function resolveDefaultCodenavBinary(): string | null {
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  const candidates = [
+    process.env.NIGHTFALL_CODENAV_BIN,
+    process.env.NIGHTFALL_CODENAV_BIN_DIR
+      ? path.join(process.env.NIGHTFALL_CODENAV_BIN_DIR, `codenav${ext}`)
+      : undefined,
+    path.join(os.homedir(), '.local', 'share', 'nightfall', 'codenav', 'bin', `codenav${ext}`),
+    path.resolve(MODULE_DIR, `../../../vendor/codenav/bin/codenav${ext}`),
+    path.resolve(process.cwd(), `vendor/codenav/bin/codenav${ext}`),
+  ].filter((c): c is string => Boolean(c && c.trim()));
+
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    if (existsSync(resolved)) {
+      return resolved;
+    }
+  }
+  return null;
+}
+
 export function discoverMantisToolchainSync(deps?: {
   pythonExecutable?: string;
   engineDir?: string;
@@ -66,6 +89,11 @@ export function discoverMantisToolchainSync(deps?: {
   const runtimeDir = path.join(engineDir, 'mantis_runtime');
   const pythonExecutable = deps?.pythonExecutable ?? resolveDefaultMantisPython(engineDir);
   const available = existsSync(bridgeScriptPath) && existsSync(runtimeDir);
+  const fnauditAvailable =
+    existsSync(path.join(engineDir, 'third_party', 'fnaudit', 'db.py')) &&
+    existsSync(path.join(engineDir, 'tools', 'function_audit_tools.py'));
+  const codenavBinaryPath = resolveDefaultCodenavBinary();
+  const codenavAvailable = codenavBinaryPath !== null;
   return MantisToolchainStatusSchema.parse({
     available,
     engineDir,
@@ -75,6 +103,12 @@ export function discoverMantisToolchainSync(deps?: {
     sandboxMode: 'static-only',
     upstreamRepo: MANTIS_UPSTREAM_REPO,
     stageCount: MANTIS_REFERENCE_PIPELINE_STAGES.length,
+    fnauditAvailable,
+    fnauditPinnedCommit: FNAUDIT_PINNED_COMMIT,
+    codenavAvailable,
+    codenavBinaryPath,
+    codenavPinnedCommit: CODENAV_PINNED_COMMIT,
+    evidenceGateEnabled: available,
   });
 }
 

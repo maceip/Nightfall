@@ -220,6 +220,12 @@ export function buildContractValidatedTestState() {
     sandboxMode: 'static-only' as const,
     upstreamRepo: 'https://github.com/maceip/mantis',
     stageCount: 20,
+    fnauditAvailable: true,
+    fnauditPinnedCommit: '686c309a04debc2cd76db228b3c52e22afc7fce4',
+    codenavAvailable: true,
+    codenavBinaryPath: '/home/antigravity/.local/share/nightfall/codenav/bin/codenav',
+    codenavPinnedCommit: '670a3f3ca515bf17de6a43f338efca32af3ad0d2',
+    evidenceGateEnabled: true,
   };
 
   return {

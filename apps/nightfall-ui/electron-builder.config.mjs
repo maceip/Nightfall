@@ -254,6 +254,18 @@ const optionalScorecardExtraResources = existsSync(
     ]
   : [];
 
+const optionalCodenavExtraResources = existsSync(
+  resolve(desktopPackageRoot, `bundled-tools/${targetPlatformKey}/codenav`),
+)
+  ? [
+      {
+        from: `bundled-tools/${targetPlatformKey}/codenav`,
+        to: 'tools/codenav',
+        filter: ['**/*'],
+      },
+    ]
+  : [];
+
 const optionalMantisExtraResources = existsSync(
   resolve(workspaceRoot, 'services/mantis-engine/reference/nightfall_bridge.py'),
 )
@@ -348,6 +360,7 @@ export default {
       : []),
     ...optionalLiteBoxExtraResources,
     ...optionalScorecardExtraResources,
+    ...optionalCodenavExtraResources,
     ...optionalMantisExtraResources,
   ],
   mac: {

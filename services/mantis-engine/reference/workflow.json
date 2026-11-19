@@ -63,7 +63,7 @@
       "fork_from": "planner",
       "prefix_group": "audit_stem",
       "reasoning_effort": "medium",
-      "tools": ["list_files", "read_file", "get_summary", "get_threat_model", "get_plan", "find_symbol", "find_callers", "find_callees", "get_function_boundary", "write_file"]
+      "tools": ["list_files", "read_file", "get_summary", "get_threat_model", "get_plan", "find_symbol", "find_callers", "find_callees", "get_function_boundary", "record_function_audit", "get_function_audit", "summarize_function_audits", "codenav_query", "write_file"]
     },
     {
       "id": "researcher",
@@ -71,7 +71,7 @@
       "fork_from": "explorer",
       "prefix_group": "audit_stem",
       "reasoning_effort": "medium",
-      "tools": ["read_file", "write_file", "list_files", "get_summary", "get_threat_model", "get_plan", "report_findings", "get_findings", "find_symbol", "find_callers", "find_callees", "get_function_boundary", "record_regression_check"]
+      "tools": ["read_file", "write_file", "list_files", "get_summary", "get_threat_model", "get_plan", "report_findings", "get_findings", "find_symbol", "find_callers", "find_callees", "get_function_boundary", "record_function_audit", "get_function_audit", "summarize_function_audits", "codenav_query", "record_regression_check"]
     },
     {
       "id": "findings_gate",
@@ -90,7 +90,7 @@
       "fork_from": "explorer",
       "prefix_group": "audit_stem",
       "reasoning_effort": "medium",
-      "tools": ["read_file", "get_findings", "get_threat_model", "get_summary", "find_symbol", "find_callers", "find_callees", "get_function_boundary", "record_regression_check"],
+      "tools": ["read_file", "get_findings", "get_threat_model", "get_summary", "find_symbol", "find_callers", "find_callees", "get_function_boundary", "get_function_audit", "summarize_function_audits", "codenav_query", "record_regression_check"],
       "output_schema": "ReviewVerdict",
       "output_key": "verdict"
     },
@@ -105,7 +105,7 @@
       "fork_from": "explorer",
       "prefix_group": "audit_stem",
       "reasoning_effort": "medium",
-      "tools": ["read_file", "get_findings", "get_threat_model", "find_symbol", "find_callers", "find_callees", "get_function_boundary"],
+      "tools": ["read_file", "get_findings", "get_threat_model", "find_symbol", "find_callers", "find_callees", "get_function_boundary", "get_function_audit", "summarize_function_audits", "codenav_query"],
       "output_schema": "CriticVerdict",
       "output_key": "verdict"
     },
