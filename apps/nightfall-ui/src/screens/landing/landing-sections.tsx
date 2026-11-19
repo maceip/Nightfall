@@ -38,7 +38,7 @@ const previewWindowStyle: CSSProperties = {
 };
 
 const previewWindowActiveStyle: CSSProperties = {
-  borderColor: 'var(--color-accent)',
+  border: 'var(--border-width) solid var(--color-accent)',
   transform: 'translateY(-2px)',
 };
 
@@ -56,14 +56,17 @@ export function LandingWorkbenchPreviewSection({
   return (
     <section aria-labelledby="preview-heading" className="pt-12 md:pt-14">
       <VStack gap={4}>
-        <div className="max-w-xl">
+        <div className="max-w-2xl">
           <VStack gap={1}>
             <Heading level={2} type="display-3">
-              <span id="preview-heading">Inspect findings and patches in the browser.</span>
+              <span id="preview-heading">
+                Vulnerabilities linger when proof and patch live in separate tools.
+              </span>
             </Heading>
             <Text type="supporting" color="secondary">
-              Launch the interactive web console to triage root-cause clusters, review unified
-              diffs, and inspect campaign evidence.
+              Tossing CSV exports into a backlog leaves engineers guessing how to reproduce the
+              bug. One shared queue links the live HTTP exploit trace, the vulnerable line of code,
+              and the verified branch ready to merge.
             </Text>
           </VStack>
         </div>
@@ -87,7 +90,7 @@ export function LandingWorkbenchPreviewSection({
           >
             <img
               src={previewSrc}
-              alt="Nightfall three-column security console"
+              alt="Nightfall unified security queue linking exploit traces, root-cause findings, and verified patches"
               width={1440}
               height={900}
               className="block h-auto w-full rounded-[9px] border border-hairline"
@@ -109,10 +112,18 @@ export function LandingPlatformDownloadsSection({
   return (
     <section id="platform-downloads" aria-labelledby="downloads-heading" className="pt-12">
       <VStack gap={3}>
-        <HStack justify="between" vAlign="center" wrap="wrap" gap={2}>
-          <Heading level={3}>
-            <span id="downloads-heading">Desktop installers</span>
-          </Heading>
+        <HStack justify="between" vAlign="end" wrap="wrap" gap={2}>
+          <div className="max-w-xl space-y-1">
+            <Heading level={3}>
+              <span id="downloads-heading">
+                Audit private repos and localhost targets that can&apos;t touch the cloud.
+              </span>
+            </Heading>
+            <Text type="supporting" color="secondary">
+              Run the orchestrator, Go Scorecard daemon, and sandboxed patch proofs locally on
+              macOS or Windows with zero source code uploaded externally.
+            </Text>
+          </div>
           <a
             id="download-link-checksums"
             href={NIGHTFALL_CHECKSUMS_URL}

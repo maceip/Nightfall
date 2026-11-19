@@ -34,16 +34,16 @@ export function SeverityProportionalBars({
             key={row.key}
             type="button"
             onClick={onSelectSeverity ? () => onSelectSeverity(row.key) : undefined}
-            className="grid w-full grid-cols-[72px_1fr_44px] items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-all group-hover/bars:opacity-35 hover:!opacity-100 hover:bg-[#F5F6F4] cursor-pointer"
+            className="grid w-full grid-cols-[72px_1fr_44px] items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-all group-hover/bars:opacity-35 hover:!opacity-100 hover:bg-muted cursor-pointer"
           >
-            <span className="text-[13px] font-medium text-[#434542]">{row.label}</span>
+            <span className="text-[13px] font-medium text-ink-secondary">{row.label}</span>
             <span className="flex items-center">
               <span
                 className="h-3.5 rounded-[4px] transition-all"
                 style={{ width: `${widthPct}%`, backgroundColor: row.color }}
               />
             </span>
-            <span className="text-right text-[13.5px] font-semibold text-[#141514]">
+            <span className="text-right text-[13.5px] font-semibold text-ink">
               {row.count}
             </span>
           </button>
@@ -119,7 +119,7 @@ export function DailyTrendChart({
           y1={height - padY}
           x2={width - padX}
           y2={height - padY}
-          stroke="#ECEEE9"
+          stroke="var(--nf-hairline)"
           strokeWidth="1"
         />
         <path d={areaPath} fill="url(#nfFixedTrendFill)" />
@@ -132,7 +132,7 @@ export function DailyTrendChart({
         />
         <polyline fill="none" stroke="#15803D" strokeWidth="2" points={fixedPoints} />
       </svg>
-      <div className="flex items-center gap-4 text-[12px] text-[#5E605D]">
+      <div className="flex items-center gap-4 text-[12px] text-ink-secondary">
         <span className="inline-flex items-center gap-1.5">
           <span className="h-0.5 w-3 rounded-full bg-[#15803D]" />
           <span>Currently fixed</span>
@@ -186,8 +186,8 @@ export function CampaignActivityTimeline({
 
   return (
     <div className={cn('space-y-3 tabular-nums', className)}>
-      <div className="grid grid-cols-[78px_1fr] items-start gap-3">
-        <span className="pt-1 text-[12.5px] font-medium text-[#5E605D]">Activity</span>
+      <div className="grid grid-cols-[68px_1fr] items-start gap-2.5">
+        <span className="pt-1 text-[12px] font-medium text-ink-secondary">Activity</span>
         <div>
           <svg viewBox={`0 0 ${width} ${height}`} className="block h-11 w-full">
             <defs>
@@ -196,24 +196,24 @@ export function CampaignActivityTimeline({
                 <stop offset="100%" stopColor="#1D74F5" stopOpacity="0" />
               </linearGradient>
             </defs>
-            <line x1="0" y1={height - 2} x2={width} y2={height - 2} stroke="#E6E7E5" strokeWidth="1" />
+            <line x1="0" y1={height - 2} x2={width} y2={height - 2} stroke="var(--nf-hairline)" strokeWidth="1" />
             <path d={fillPath} fill="url(#nfActivityArea)" />
             <polyline fill="none" stroke="#1D74F5" strokeWidth="1.8" points={points} />
           </svg>
-          <div className="mt-0.5 flex justify-between text-[11px] text-[#7A7C78]">
+          <div className="mt-0.5 flex justify-between text-[11px] text-ink-muted">
             <span>{startLabel}</span>
             <span>{endLabel}</span>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-[78px_1fr] items-center gap-3">
-        <span className="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-[#5E605D]">
-          <span className="size-2 rounded-full bg-[#15803D]" />
+      <div className="grid grid-cols-[68px_1fr] items-center gap-2.5">
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-secondary">
+          <span className="size-2 rounded-full bg-status-green-dot" />
           <span>Findings</span>
         </span>
         <div
-          className="flex h-4 items-center justify-between gap-[3px]"
+          className="flex h-4 items-center justify-between gap-[2px]"
           role="img"
           aria-label="Confirmed findings timeline ticks"
         >
@@ -223,7 +223,7 @@ export function CampaignActivityTimeline({
               title={`${pt.timestamp}: ${pt.requestsCount} reqs${pt.findingConfirmedTick ? ' · Finding confirmed' : ''}`}
               className={cn(
                 'h-3.5 w-[3px] rounded-full',
-                pt.findingConfirmedTick ? 'bg-[#15803D]' : 'bg-[#D8DAD7]',
+                pt.findingConfirmedTick ? 'bg-status-green-dot' : 'bg-hairline-strong',
               )}
             />
           ))}
@@ -257,14 +257,14 @@ export function BudgetSignalBars({
             className={cn(
               'w-[3.5px] rounded-[1px]',
               heightCls,
-              idx < activeBars ? 'bg-[#15803D]' : 'bg-[#D4D6D2]',
+              idx < activeBars ? 'bg-status-green-dot' : 'bg-hairline-strong',
             )}
           />
         ))}
       </div>
       <div className="leading-tight text-[11.5px]">
-        <span className="font-bold text-[#15803D]">{safePct}%</span>{' '}
-        <span className="text-[#6E706D]">Left</span>
+        <span className="font-bold text-status-mint-ink">{safePct}%</span>{' '}
+        <span className="text-ink-secondary">Left</span>
       </div>
     </div>
   );

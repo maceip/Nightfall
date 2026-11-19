@@ -3,15 +3,11 @@ import {
   AppShell,
   ArrowRightIcon,
   AstryxButton,
-  DefenseFactoryPillarArt,
   DownloadIcon,
-  Grid,
   Heading,
   HStack,
   NightfallHorizonIcon,
   nightfallTheme,
-  RedTeamPillarArt,
-  ScorecardPillarArt,
   Text,
   Theme,
   TopNav,
@@ -19,7 +15,7 @@ import {
   useMediaQuery,
   VStack,
 } from '@nightfall/ui-kit';
-import type { PrimarySection } from '../../hooks/use-nightfall-router.js';
+import { LandingLiveHeroGrid, type LandingLaunchTarget } from './landing-live-cards.js';
 import {
   LandingFooterSection,
   LandingPlatformDownloadsSection,
@@ -33,10 +29,7 @@ import {
   resolvePlatformDownloadPlan,
 } from './platform-downloads.js';
 
-export type LandingLaunchTarget = Extract<
-  PrimarySection,
-  'findings' | 'fixes' | 'red-team' | 'scorecard' | 'overview'
->;
+export type { LandingLaunchTarget };
 
 export type NightfallLandingPageProps = {
   colorMode: 'dark' | 'light';
@@ -44,65 +37,15 @@ export type NightfallLandingPageProps = {
   onLaunchConsole: (target?: LandingLaunchTarget) => void;
 };
 
-type PillarItem = {
-  id: 'defense' | 'red-team' | 'scorecard';
-  title: string;
-  body: string;
-  ctaLabel: string;
-  target: LandingLaunchTarget;
-  renderArt: (active: boolean) => React.ReactNode;
-};
-
-const PILLARS: ReadonlyArray<PillarItem> = [
-  {
-    id: 'defense',
-    title: 'Defense Factory.',
-    body: 'Root-cause SAST, Mantis 20-stage deep review, and two-stage exploit/fix verification in Microsoft LiteBox.',
-    ctaLabel: 'Inspect verified fixes →',
-    target: 'fixes',
-    renderArt: (active) => <DefenseFactoryPillarArt active={active} />,
-  },
-  {
-    id: 'red-team',
-    title: 'Scope-signed Red Team.',
-    body: 'Ed25519 campaign manifests enforced mid-flight by EgressPolicyProxy across live HTTP and WebSocket probes.',
-    ctaLabel: 'Open live campaign →',
-    target: 'red-team',
-    renderArt: (active) => <RedTeamPillarArt active={active} />,
-  },
-  {
-    id: 'scorecard',
-    title: 'Supply-chain Scorecard.',
-    body: 'Continuous CI workflow and dependency posture evaluation powered by the vendored Go Scorecard daemon.',
-    ctaLabel: 'Review posture checks →',
-    target: 'scorecard',
-    renderArt: (active) => <ScorecardPillarArt active={active} />,
-  },
-];
-
 const styles: Record<string, CSSProperties> = {
   pageBodyDesktop: { maxWidth: 1120, width: '100%', marginInline: 'auto', paddingBlock: '36px 28px' },
   pageBodyMobile: { width: '100%', paddingBlock: '16px 24px' },
-  heroHeadlineWrap: { maxWidth: 840, marginInline: 'auto' },
-  heroSubheadWrap: { maxWidth: 640, marginInline: 'auto' },
+  heroHeadlineWrap: { maxWidth: 860, marginInline: 'auto' },
+  heroSubheadWrap: { maxWidth: 660, marginInline: 'auto' },
   heroHeadingDesktop: { fontSize: 'clamp(2rem, 4.1vw, 3.25rem)', lineHeight: 1.12, letterSpacing: '-0.025em' },
   heroHeadingMobile: { fontSize: '1.85rem', lineHeight: 1.14, letterSpacing: '-0.022em' },
   heroLead: { display: 'block', fontWeight: 'var(--font-weight-normal)' },
   heroPunch: { display: 'block', fontWeight: 'var(--font-weight-semibold)' },
-  pillarButton: { all: 'unset', display: 'block', width: '100%', cursor: 'pointer', textAlign: 'left' },
-  artFrame: {
-    width: '100%',
-    aspectRatio: '16 / 10',
-    borderRadius: 12,
-    backgroundColor: 'var(--color-background-surface)',
-    border: 'var(--border-width) solid var(--color-border)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    transition: 'border-color 180ms ease, transform 180ms ease',
-  },
-  artFrameActive: { borderColor: 'var(--color-accent)', transform: 'translateY(-2px)' },
 };
 
 export function NightfallLandingPage({
@@ -114,7 +57,6 @@ export function NightfallLandingPage({
   const [detectedPlatform, setDetectedPlatform] = useState<DesktopPlatformId>(() =>
     detectClientPlatformSync(),
   );
-  const [hoveredPillar, setHoveredPillar] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -180,18 +122,18 @@ export function NightfallLandingPage({
                       id="hero-heading"
                       style={isMobile ? styles.heroHeadingMobile : styles.heroHeadingDesktop}
                     >
-                      <span style={styles.heroLead}>Exploit traces meet verified patches.</span>
+                      <span style={styles.heroLead}>Scanners drown teams in unverified alerts.</span>
                       <span style={styles.heroPunch}>
-                        Close security findings before attackers do.
+                        Only ship fixes proven against real exploits.
                       </span>
                     </span>
                   </Heading>
                 </div>
                 <div style={styles.heroSubheadWrap}>
                   <Text type={isMobile ? 'supporting' : 'body'} color="secondary" justify="center">
-                    Nightfall pairs scope-signed Red Team campaigns with Mantis deep static review,
-                    Microsoft LiteBox proofs, and Scorecard posture checks in one closed-loop
-                    workbench.
+                    Static rules flag dead code while real cross-tenant bugs reach production.
+                    Nightfall reproduces live exploit paths, verifies minimal patches in isolation,
+                    and blocks CI workflow drift.
                   </Text>
                 </div>
               </VStack>
@@ -236,50 +178,7 @@ export function NightfallLandingPage({
                 </div>
               </VStack>
 
-              <div className="mt-2 w-full">
-                <Grid columns={{ minWidth: 260, max: 3, repeat: 'fit' }} gap={6}>
-                  {PILLARS.map((pillar) => {
-                    const isHovered = hoveredPillar === pillar.id;
-                    return (
-                      <button
-                        key={pillar.id}
-                        id={`hero-pillar-${pillar.id}`}
-                        type="button"
-                        style={styles.pillarButton}
-                        onMouseEnter={() => setHoveredPillar(pillar.id)}
-                        onMouseLeave={() => setHoveredPillar(null)}
-                        onFocus={() => setHoveredPillar(pillar.id)}
-                        onBlur={() => setHoveredPillar(null)}
-                        onClick={() => onLaunchConsole(pillar.target)}
-                      >
-                        <VStack gap={3}>
-                          <div
-                            style={{
-                              ...styles.artFrame,
-                              ...(isHovered ? styles.artFrameActive : null),
-                            }}
-                          >
-                            {pillar.renderArt(isHovered)}
-                          </div>
-                          <VStack gap={1}>
-                            <Heading level={4}>{pillar.title}</Heading>
-                            <Text type="supporting" color="secondary">
-                              {pillar.body}
-                            </Text>
-                            <Text
-                              type="supporting"
-                              color={isHovered ? 'primary' : 'accent'}
-                              weight="medium"
-                            >
-                              {pillar.ctaLabel}
-                            </Text>
-                          </VStack>
-                        </VStack>
-                      </button>
-                    );
-                  })}
-                </Grid>
-              </div>
+              <LandingLiveHeroGrid onLaunchConsole={onLaunchConsole} />
             </VStack>
           </section>
 

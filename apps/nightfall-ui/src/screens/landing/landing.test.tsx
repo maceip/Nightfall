@@ -76,7 +76,7 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
     expect(winPlan.alternateInstallers.map((x) => x.id)).toEqual(['mac-arm64', 'mac-x64']);
   });
 
-  it('transitions cleanly between the landing page and the live Web Console', async () => {
+  it('mounts live Nightfall components in the 3-card hero, renders problem-first headers, and transitions to the Web Console', async () => {
     testServer = await startContractValidatedTestServer();
     setNightfallApiBaseUrl(testServer.baseUrl);
     window.history.replaceState({}, '', '/');
@@ -84,6 +84,22 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
     render(<NightfallShowcaseRoot />);
 
     expect(screen.getByTestId('nightfall-landing-page')).toBeTruthy();
+    expect(
+      screen.getByText('Vulnerabilities linger when proof and patch live in separate tools.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Audit private repos and localhost targets that can't touch the cloud."),
+    ).toBeTruthy();
+
+    // Verify all 3 hero cards mount live @nightfall/ui-kit components populated by real backend state
+    await waitFor(() => {
+      expect(document.querySelector('#hero-pillar-defense pre')).toBeTruthy();
+      expect(
+        document.querySelector('#hero-pillar-red-team [aria-label="Confirmed findings timeline ticks"]'),
+      ).toBeTruthy();
+      expect(document.querySelector('#hero-live-scorecard-meter')).toBeTruthy();
+    });
+
     expect(document.querySelector('#hero-launch-console')).toBeTruthy();
     expect(document.querySelector('#hero-download-installer')).toBeTruthy();
     expect(document.querySelector('#download-link-mac-arm64')).toBeTruthy();

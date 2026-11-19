@@ -7,10 +7,6 @@ export type UnifiedDiffViewerProps = {
   className?: string;
 };
 
-// Matches Screenshot #10 (`SEARCH_EXPORTS.PY` Minimal patch viewer):
-// Clean uppercase monospace header, zero sequential line-number gutter,
-// soft rose (`#FCEBEA`) for `---` and `-`, soft emerald (`#E6F6EC`) for `+++` and `+`,
-// and crisp white background for `@@` hunk headers and context lines.
 export function UnifiedDiffViewer({
   filePath,
   unifiedDiff,
@@ -21,31 +17,27 @@ export function UnifiedDiffViewer({
   return (
     <div
       className={cn(
-        'overflow-hidden rounded-xl border border-[#E6E7E5] bg-white text-xs',
+        'overflow-hidden rounded-xl border border-hairline bg-canvas text-xs',
         className,
       )}
     >
       {filePath ? (
-        <div className="border-b border-[#ECEEE9] bg-[#FAFBF9] px-4 py-2 font-mono text-[11px] font-medium uppercase tracking-[0.04em] text-[#5E605D]">
+        <div className="border-b border-hairline bg-sidebar px-3.5 py-2 font-mono text-[11px] font-medium tracking-[0.03em] text-ink-secondary truncate">
           {filePath}
         </div>
       ) : null}
-      <pre className="m-0 overflow-x-auto py-1.5 font-mono text-[12px] leading-[1.6] tabular-nums">
+      <pre className="m-0 overflow-x-auto py-1.5 font-mono text-[11.5px] leading-[1.55] tabular-nums">
         {lines.map((line, index) => {
-          let lineTone = 'bg-white text-[#141514]';
-          if (line.startsWith('---')) {
-            lineTone = 'bg-[#FCEBEA] text-[#8A1F24]';
-          } else if (line.startsWith('+++')) {
-            lineTone = 'bg-[#E6F6EC] text-[#14532D]';
+          let lineTone = 'bg-canvas text-ink';
+          if (line.startsWith('---') || line.startsWith('-')) {
+            lineTone = 'bg-status-danger text-status-danger-ink';
+          } else if (line.startsWith('+++') || line.startsWith('+')) {
+            lineTone = 'bg-status-mint text-status-mint-ink';
           } else if (line.startsWith('@@')) {
-            lineTone = 'bg-white text-[#5E605D]';
-          } else if (line.startsWith('-')) {
-            lineTone = 'bg-[#FCEBEA] text-[#8A1F24]';
-          } else if (line.startsWith('+')) {
-            lineTone = 'bg-[#E6F6EC] text-[#14532D]';
+            lineTone = 'bg-canvas text-ink-muted';
           }
           return (
-            <div key={index} className={cn('px-4 py-0.5', lineTone)}>
+            <div key={index} className={cn('px-3.5 py-0.5', lineTone)}>
               <code className="whitespace-pre">{line || ' '}</code>
             </div>
           );
