@@ -77,7 +77,7 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
     expect(winPlan.alternateInstallers.map((x) => x.id)).toEqual(['mac-arm64', 'mac-x64']);
   });
 
-  it('mounts live Nightfall components in the 3-card hero, renders problem-first headers, and transitions to the Web Console', async () => {
+  it('mounts Nightfall-tinted illustration cards, concise readable copy, and transitions to the Web Console', async () => {
     testServer = await startContractValidatedTestServer();
     setNightfallApiBaseUrl(testServer.baseUrl);
     window.history.replaceState({}, '', '/');
@@ -85,21 +85,18 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
     render(<NightfallShowcaseRoot />);
 
     expect(screen.getByTestId('nightfall-landing-page')).toBeTruthy();
-    expect(
-      screen.getByText('Vulnerabilities linger when proof and patch live in separate tools.'),
-    ).toBeTruthy();
-    expect(
-      screen.getByText("Audit private repos and localhost targets that can't touch the cloud."),
-    ).toBeTruthy();
+    expect(screen.getByText('Only ship fixes proven against real exploits.')).toBeTruthy();
+    expect(screen.getByText('Prove exploits before patching.')).toBeTruthy();
+    expect(screen.getByText('Probe staging without scope creep.')).toBeTruthy();
+    expect(screen.getByText('Block risky CI workflows pre-merge.')).toBeTruthy();
 
-    // Verify all 3 hero cards mount live @nightfall/ui-kit components populated by real backend state
-    await waitFor(() => {
-      expect(document.querySelector('#hero-pillar-defense pre')).toBeTruthy();
-      expect(
-        document.querySelector('#hero-pillar-red-team [aria-label="Confirmed findings timeline ticks"]'),
-      ).toBeTruthy();
-      expect(document.querySelector('#hero-live-scorecard-meter')).toBeTruthy();
-    });
+    const defenseImg = document.querySelector('#hero-pillar-defense img') as HTMLImageElement | null;
+    const redTeamImg = document.querySelector('#hero-pillar-red-team img') as HTMLImageElement | null;
+    const scorecardImg = document.querySelector('#hero-pillar-scorecard img') as HTMLImageElement | null;
+    expect(defenseImg?.getAttribute('src')).toBe('./pillar-defense.webp');
+    expect(redTeamImg?.getAttribute('src')).toBe('./pillar-red-team.webp');
+    expect(scorecardImg?.getAttribute('src')).toBe('./pillar-scorecard.webp');
+    expect(document.querySelectorAll('.nf-nightfall-card').length).toBe(3);
 
     expect(document.querySelector('#hero-launch-console')).toBeTruthy();
     expect(document.querySelector('#hero-download-installer')).toBeTruthy();

@@ -74,6 +74,9 @@ async function main(): Promise<void> {
     'og-card.png',
     'preview-console-light.png',
     'preview-console-dark.png',
+    'pillar-defense.webp',
+    'pillar-red-team.webp',
+    'pillar-scorecard.webp',
   ];
 
   for (const rel of requiredAssets) {

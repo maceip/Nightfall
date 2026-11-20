@@ -8,7 +8,6 @@ import {
   HStack,
   NightfallHorizonIcon,
   nightfallTheme,
-  Text,
   Theme,
   TopNav,
   TopNavHeading,
@@ -38,14 +37,16 @@ export type NightfallLandingPageProps = {
 };
 
 const styles: Record<string, CSSProperties> = {
-  pageBodyDesktop: { maxWidth: 1120, width: '100%', marginInline: 'auto', paddingBlock: '36px 28px' },
-  pageBodyMobile: { width: '100%', paddingBlock: '16px 24px' },
-  heroHeadlineWrap: { maxWidth: 860, marginInline: 'auto' },
-  heroSubheadWrap: { maxWidth: 660, marginInline: 'auto' },
-  heroHeadingDesktop: { fontSize: 'clamp(2rem, 4.1vw, 3.25rem)', lineHeight: 1.12, letterSpacing: '-0.025em' },
-  heroHeadingMobile: { fontSize: '1.85rem', lineHeight: 1.14, letterSpacing: '-0.022em' },
-  heroLead: { display: 'block', fontWeight: 'var(--font-weight-normal)' },
-  heroPunch: { display: 'block', fontWeight: 'var(--font-weight-semibold)' },
+  pageBodyDesktop: {
+    maxWidth: 1160,
+    width: '100%',
+    marginInline: 'auto',
+    paddingBlock: '40px 32px',
+  },
+  pageBodyMobile: { width: '100%', paddingBlock: '20px 28px' },
+  heroHeadlineWrap: { maxWidth: 760, marginInline: 'auto' },
+  heroHeadingDesktop: { fontSize: 'clamp(2.4rem, 4.5vw, 3.5rem)', lineHeight: 1.08 },
+  heroHeadingMobile: { fontSize: '2.1rem', lineHeight: 1.1 },
 };
 
 export function NightfallLandingPage({
@@ -114,31 +115,24 @@ export function NightfallLandingPage({
           style={isMobile ? styles.pageBodyMobile : styles.pageBodyDesktop}
         >
           <section aria-labelledby="hero-heading">
-            <VStack gap={isMobile ? 4 : 6} hAlign="center">
-              <VStack gap={isMobile ? 2 : 3} hAlign="center">
+            <VStack gap={isMobile ? 5 : 6} hAlign="center">
+              <VStack gap={3} hAlign="center">
                 <div style={styles.heroHeadlineWrap}>
                   <Heading level={1} type="display-1" justify="center" textWrap="balance">
                     <span
                       id="hero-heading"
                       style={isMobile ? styles.heroHeadingMobile : styles.heroHeadingDesktop}
                     >
-                      <span style={styles.heroLead}>Scanners drown teams in unverified alerts.</span>
-                      <span style={styles.heroPunch}>
-                        Only ship fixes proven against real exploits.
-                      </span>
+                      Only ship fixes proven against real exploits.
                     </span>
                   </Heading>
                 </div>
-                <div style={styles.heroSubheadWrap}>
-                  <Text type={isMobile ? 'supporting' : 'body'} color="secondary" justify="center">
-                    Static rules flag dead code while real cross-tenant bugs reach production.
-                    Nightfall reproduces live exploit paths, verifies minimal patches in isolation,
-                    and blocks CI workflow drift.
-                  </Text>
-                </div>
+                <p className="m-0 max-w-[46ch] text-center text-[16.5px] leading-[1.5] text-pretty text-ink-secondary md:text-[18.5px]">
+                  Autonomous red-teaming, sandboxed exploit proof, and verified Git patches.
+                </p>
               </VStack>
 
-              <VStack gap={2} hAlign="center" width="100%">
+              <VStack gap={3} hAlign="center" width="100%">
                 <HStack gap={isMobile ? 2 : 3} wrap="wrap" hAlign="center" vAlign="center">
                   <AstryxButton
                     id="hero-launch-console"
@@ -160,16 +154,15 @@ export function NightfallLandingPage({
 
                 <div
                   id="hero-alternate-platforms"
-                  className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs text-ink-secondary"
+                  className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[14px] text-ink-secondary"
                 >
-                  <span>Other platforms:</span>
                   {plan.alternateInstallers.map((alt, idx) => (
                     <React.Fragment key={alt.id}>
                       {idx > 0 ? <span aria-hidden="true">·</span> : null}
                       <a
                         id={`hero-alt-download-${alt.id}`}
                         href={alt.url}
-                        className="font-medium text-ink underline decoration-hairline-strong underline-offset-3 hover:text-accent-blue"
+                        className="font-medium text-ink underline decoration-hairline-strong underline-offset-4 hover:text-accent-blue"
                       >
                         {alt.shortLabel}
                       </a>

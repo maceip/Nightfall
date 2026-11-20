@@ -4,11 +4,9 @@ import {
   AstryxSegmentedControl,
   Divider,
   DownloadIcon,
-  Heading,
   HStack,
   SegmentedControlItem,
   StackItem,
-  Text,
   VStack,
 } from '@nightfall/ui-kit';
 import {
@@ -18,27 +16,19 @@ import {
   type PlatformInstallerSpec,
 } from './platform-downloads.js';
 
-const triggerResetStyle: CSSProperties = {
-  all: 'unset',
-  display: 'block',
-  width: '100%',
-  cursor: 'pointer',
-  textAlign: 'left',
-};
-
 const previewWindowStyle: CSSProperties = {
   width: '100%',
   padding: 6,
-  borderRadius: 14,
-  backgroundColor: 'var(--color-background-surface)',
-  border: 'var(--border-width) solid var(--color-border-emphasized)',
+  borderRadius: 16,
+  backgroundColor: 'var(--nf-card-tint-bg)',
+  border: '1px solid var(--nf-card-tint-border)',
   boxShadow: '0 20px 56px rgba(0, 0, 0, 0.16)',
-  transition: 'border-color 180ms ease, transform 180ms ease',
+  transition: 'transform 180ms ease-out',
   boxSizing: 'border-box',
 };
 
 const previewWindowActiveStyle: CSSProperties = {
-  border: 'var(--border-width) solid var(--color-accent)',
+  border: '1px solid var(--nf-card-tint-border-hover)',
   transform: 'translateY(-2px)',
 };
 
@@ -54,50 +44,33 @@ export function LandingWorkbenchPreviewSection({
     colorMode === 'dark' ? './preview-console-dark.png' : './preview-console-light.png';
 
   return (
-    <section aria-labelledby="preview-heading" className="pt-12 md:pt-14">
-      <VStack gap={4}>
-        <div className="max-w-2xl">
-          <VStack gap={1}>
-            <Heading level={2} type="display-3">
-              <span id="preview-heading">
-                Vulnerabilities linger when proof and patch live in separate tools.
-              </span>
-            </Heading>
-            <Text type="supporting" color="secondary">
-              Tossing CSV exports into a backlog leaves engineers guessing how to reproduce the
-              bug. One shared queue links the live HTTP exploit trace, the vulnerable line of code,
-              and the verified branch ready to merge.
-            </Text>
-          </VStack>
-        </div>
-
-        <button
-          id="hero-product-preview"
-          type="button"
-          aria-label="Open interactive Nightfall Web Console"
-          style={triggerResetStyle}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          onFocus={() => setHovered(true)}
-          onBlur={() => setHovered(false)}
-          onClick={onOpenConsole}
+    <section aria-label="Nightfall Web Console preview" className="pt-10 md:pt-12">
+      <button
+        id="hero-product-preview"
+        type="button"
+        aria-label="Open interactive Nightfall Web Console"
+        className="block w-full cursor-pointer rounded-2xl border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-blue"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
+        onClick={onOpenConsole}
+      >
+        <div
+          style={{
+            ...previewWindowStyle,
+            ...(hovered ? previewWindowActiveStyle : null),
+          }}
         >
-          <div
-            style={{
-              ...previewWindowStyle,
-              ...(hovered ? previewWindowActiveStyle : null),
-            }}
-          >
-            <img
-              src={previewSrc}
-              alt="Nightfall unified security queue linking exploit traces, root-cause findings, and verified patches"
-              width={1440}
-              height={900}
-              className="block h-auto w-full rounded-[9px] border border-hairline"
-            />
-          </div>
-        </button>
-      </VStack>
+          <img
+            src={previewSrc}
+            alt="Nightfall unified security queue linking exploit traces, root-cause findings, and verified patches"
+            width={1440}
+            height={900}
+            className="block h-auto w-full rounded-[11px] border border-hairline"
+          />
+        </div>
+      </button>
     </section>
   );
 }
@@ -110,51 +83,38 @@ export function LandingPlatformDownloadsSection({
   detectedPlatform: DesktopPlatformId;
 }): React.ReactElement {
   return (
-    <section id="platform-downloads" aria-labelledby="downloads-heading" className="pt-12">
+    <section id="platform-downloads" aria-labelledby="downloads-heading" className="pt-10">
       <VStack gap={3}>
-        <HStack justify="between" vAlign="end" wrap="wrap" gap={2}>
-          <div className="max-w-xl space-y-1">
-            <Heading level={3}>
-              <span id="downloads-heading">
-                Audit private repos and localhost targets that can&apos;t touch the cloud.
-              </span>
-            </Heading>
-            <Text type="supporting" color="secondary">
-              Run the orchestrator, Go Scorecard daemon, and sandboxed patch proofs locally on
-              macOS or Windows with zero source code uploaded externally.
-            </Text>
-          </div>
+        <HStack justify="between" vAlign="center" wrap="wrap" gap={2}>
+          <h2 id="downloads-heading" className="m-0 text-base font-semibold text-ink">
+            Desktop installers
+          </h2>
           <a
             id="download-link-checksums"
             href={NIGHTFALL_CHECKSUMS_URL}
-            className="font-mono text-xs text-ink-secondary underline decoration-hairline-strong underline-offset-3 hover:text-ink"
+            className="font-mono text-[13px] text-ink-secondary underline decoration-hairline-strong underline-offset-4 hover:text-ink"
           >
             SHA256SUMS.txt
           </a>
         </HStack>
 
-        <div className="nf-elevated-surface grid grid-cols-1 divide-y divide-hairline overflow-hidden rounded-2xl border border-hairline bg-card md:grid-cols-3 md:divide-x md:divide-y-0">
+        <div className="grid grid-cols-1 divide-y divide-hairline-strong overflow-hidden rounded-2xl border border-hairline-strong bg-card md:grid-cols-3 md:divide-x md:divide-y-0">
           {installers.map((item) => {
             const isCurrent = item.id === detectedPlatform;
             return (
-              <div key={item.id} className="flex flex-col justify-between gap-3 p-4">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[13.5px] font-semibold text-ink">
-                      {item.platformLabel}
-                    </span>
-                    {isCurrent ? (
-                      <span className="text-[11.5px] font-medium text-accent-blue">Detected</span>
-                    ) : null}
-                  </div>
-                  <p className="m-0 text-xs text-ink-secondary">{item.archSummary}</p>
+              <div key={item.id} className="flex flex-col justify-between gap-2.5 p-4 md:p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[15px] font-semibold text-ink">{item.platformLabel}</span>
+                  {isCurrent ? (
+                    <span className="text-[13px] font-medium text-accent-blue">Detected</span>
+                  ) : null}
                 </div>
                 <a
                   id={`download-link-${item.id}`}
                   href={item.url}
-                  className="inline-flex items-center gap-1.5 font-mono text-xs font-medium text-ink hover:text-accent-blue"
+                  className="inline-flex items-center gap-1.5 font-mono text-[13.5px] font-medium text-ink-secondary hover:text-accent-blue"
                 >
-                  <DownloadIcon size={13} />
+                  <DownloadIcon size={14} />
                   <span>{item.fileName}</span>
                 </a>
               </div>
@@ -174,14 +134,12 @@ export function LandingFooterSection({
   onColorModeChange: (mode: 'dark' | 'light') => void;
 }): React.ReactElement {
   return (
-    <footer className="pt-12">
+    <footer className="pt-10">
       <VStack gap={4}>
         <Divider />
         <HStack gap={3} vAlign="center" wrap="wrap">
           <StackItem size="fill">
-            <Text type="supporting" color="secondary">
-              Nightfall · Desktop builds for macOS (Apple Silicon &amp; Intel) and Windows x64
-            </Text>
+            <span className="text-sm font-medium text-ink-secondary">Nightfall</span>
           </StackItem>
           <HStack gap={2} vAlign="center" wrap="wrap">
             <AstryxButton
