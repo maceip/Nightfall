@@ -10,58 +10,42 @@ import {
   VStack,
 } from '@nightfall/ui-kit';
 import {
-  type DesktopPlatformId,
   NIGHTFALL_CHECKSUMS_URL,
   NIGHTFALL_RELEASES_LATEST_URL,
-  type PlatformInstallerSpec,
+  type PlatformDownloadPlan,
 } from './platform-downloads.js';
 
 export function LandingPlatformDownloadsSection({
-  installers,
-  detectedPlatform,
+  plan,
+  isMobile,
 }: {
-  installers: ReadonlyArray<PlatformInstallerSpec>;
-  detectedPlatform: DesktopPlatformId;
+  plan: PlatformDownloadPlan;
+  isMobile: boolean;
 }): React.ReactElement {
-  return (
-    <section id="platform-downloads" aria-labelledby="downloads-heading" className="pt-10 md:pt-12">
-      <VStack gap={3}>
-        <HStack justify="between" vAlign="center" wrap="wrap" gap={2}>
-          <h2 id="downloads-heading" className="m-0 text-base font-semibold text-ink">
-            Desktop installers
-          </h2>
-          <a
-            id="download-link-checksums"
-            href={NIGHTFALL_CHECKSUMS_URL}
-            className="font-mono text-[13px] text-ink-secondary underline decoration-hairline-strong underline-offset-4 hover:text-ink"
-          >
-            SHA256SUMS.txt
-          </a>
-        </HStack>
+  const matched = plan.allInstallers.find((item) => item.id === plan.detectedPlatform);
+  const orderedInstallers = matched
+    ? [matched, ...plan.allInstallers.filter((item) => item.id !== matched.id)]
+    : plan.allInstallers;
 
-        <div className="grid grid-cols-1 divide-y divide-hairline-strong overflow-hidden rounded-2xl border border-hairline-strong bg-card md:grid-cols-3 md:divide-x md:divide-y-0">
-          {installers.map((item) => {
-            const isCurrent = item.id === detectedPlatform;
+  return (
+    <section id="platform-downloads" aria-label="Download Nightfall desktop builds" className="pt-8 md:pt-10">
+      <VStack gap={3} hAlign="center">
+        <HStack gap={isMobile ? 2 : 3} wrap="wrap" hAlign="center" vAlign="center">
+          {orderedInstallers.map((item, idx) => {
+            const isDetected = matched ? item.id === matched.id : idx === 0;
             return (
-              <div key={item.id} className="flex flex-col justify-between gap-2.5 p-4 md:p-5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[15px] font-semibold text-ink">{item.platformLabel}</span>
-                  {isCurrent ? (
-                    <span className="text-[13px] font-medium text-accent-blue">Detected</span>
-                  ) : null}
-                </div>
-                <a
-                  id={`download-link-${item.id}`}
-                  href={item.url}
-                  className="inline-flex items-center gap-1.5 font-mono text-[13.5px] font-medium text-ink-secondary hover:text-accent-blue"
-                >
-                  <DownloadIcon size={14} />
-                  <span>{item.fileName}</span>
-                </a>
-              </div>
+              <AstryxButton
+                key={item.id}
+                id={`download-link-${item.id}`}
+                size={isMobile ? 'md' : 'lg'}
+                variant={isDetected ? 'primary' : 'secondary'}
+                label={isDetected ? item.ctaLabel : item.shortLabel}
+                endContent={<DownloadIcon size={15} />}
+                href={item.url}
+              />
             );
           })}
-        </div>
+        </HStack>
       </VStack>
     </section>
   );
@@ -80,7 +64,16 @@ export function LandingFooterSection({
         <Divider />
         <HStack gap={3} vAlign="center" wrap="wrap">
           <StackItem size="fill">
-            <span className="text-sm font-medium text-ink-secondary">Nightfall</span>
+            <HStack gap={3} vAlign="center" wrap="wrap">
+              <span className="text-sm font-medium text-ink-secondary">Nightfall</span>
+              <a
+                id="download-link-checksums"
+                href={NIGHTFALL_CHECKSUMS_URL}
+                className="font-mono text-xs text-ink-muted underline decoration-hairline-strong underline-offset-4 hover:text-ink"
+              >
+                SHA256SUMS.txt
+              </a>
+            </HStack>
           </StackItem>
           <HStack gap={2} vAlign="center" wrap="wrap">
             <AstryxButton

@@ -21,7 +21,7 @@ const PILLAR_CARDS: ReadonlyArray<LandingPillarCardSpec> = [
     target: 'fixes',
     imageSrc: './pillar-defense.webp',
     imageAlt:
-      'Translucent sandbox cube sealing a fault seam in dark obsidian with an ice-cyan lock module above the Nightfall horizon',
+      'Glass sandbox enclosing an exploit lightning fracture flowing through a cyan Git branch merge into verified emerald patch bars',
     title: 'Prove exploits before patching.',
     body: 'Reproduces real attack paths in LiteBox and stages tested branches.',
   },
@@ -30,7 +30,7 @@ const PILLAR_CARDS: ReadonlyArray<LandingPillarCardSpec> = [
     target: 'red-team',
     imageSrc: './pillar-red-team.webp',
     imageAlt:
-      'Hexagonal aperture focusing a cyan beam onto a target core while off-scope rays stop at the boundary ring',
+      'Shield gate confining cyan network routes to staging nodes inside a scope ring while padlocks block off-scope branches',
     title: 'Probe staging without scope creep.',
     body: 'Signed manifests confine HTTP and WebSocket tests to approved routes.',
   },
@@ -39,7 +39,7 @@ const PILLAR_CARDS: ReadonlyArray<LandingPillarCardSpec> = [
     target: 'scorecard',
     imageSrc: './pillar-scorecard.webp',
     imageAlt:
-      'Three pipeline conduits passing through a cyan sentinel prism that blocks an unverified module before merge',
+      'CI pipeline rail where a cyan scanner gate quarantines an unlocked key-bearing package before the Git merge node',
     title: 'Block risky CI workflows pre-merge.',
     body: 'Continuous Scorecard checks catch unpinned actions and broad tokens.',
   },

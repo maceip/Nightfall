@@ -3,9 +3,7 @@ import {
   AppShell,
   ArrowRightIcon,
   AstryxButton,
-  DownloadIcon,
   Heading,
-  HStack,
   NightfallHorizonIcon,
   nightfallTheme,
   Theme,
@@ -131,52 +129,22 @@ export function NightfallLandingPage({
                 </p>
               </VStack>
 
-              <VStack gap={3} hAlign="center" width="100%">
-                <HStack gap={isMobile ? 2 : 3} wrap="wrap" hAlign="center" vAlign="center">
-                  <AstryxButton
-                    id="hero-launch-console"
-                    size={isMobile ? 'md' : 'lg'}
-                    variant="primary"
-                    label="Open Web Console"
-                    endContent={<ArrowRightIcon size={15} />}
-                    onClick={() => onLaunchConsole('findings')}
-                  />
-                  <AstryxButton
-                    id="hero-download-installer"
-                    size={isMobile ? 'md' : 'lg'}
-                    variant="secondary"
-                    label={isMobile ? plan.primaryCta.mobileLabel : plan.primaryCta.label}
-                    endContent={<DownloadIcon size={15} />}
-                    href={plan.primaryCta.url}
-                  />
-                </HStack>
-
-                <div
-                  id="hero-alternate-platforms"
-                  className="flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-[14px] text-ink-secondary"
-                >
-                  {plan.alternateInstallers.map((alt, idx) => (
-                    <React.Fragment key={alt.id}>
-                      {idx > 0 ? <span aria-hidden="true">·</span> : null}
-                      <a
-                        id={`hero-alt-download-${alt.id}`}
-                        href={alt.url}
-                        className="font-medium text-ink underline decoration-hairline-strong underline-offset-4 hover:text-accent-blue"
-                      >
-                        {alt.shortLabel}
-                      </a>
-                    </React.Fragment>
-                  ))}
-                </div>
-              </VStack>
+              <AstryxButton
+                id="hero-launch-console"
+                size={isMobile ? 'md' : 'lg'}
+                variant="primary"
+                label="Open Web Console"
+                endContent={<ArrowRightIcon size={15} />}
+                onClick={() => onLaunchConsole('findings')}
+              />
 
               <LandingLiveHeroGrid onLaunchConsole={onLaunchConsole} />
             </VStack>
           </section>
 
           <LandingPlatformDownloadsSection
-            installers={plan.allInstallers}
-            detectedPlatform={detectedPlatform}
+            plan={plan}
+            isMobile={isMobile}
           />
           <LandingFooterSection colorMode={colorMode} onColorModeChange={onColorModeChange} />
         </div>

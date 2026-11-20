@@ -104,8 +104,19 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
     expect(scorecardImg?.getAttribute('src')).toBe('./pillar-scorecard.webp');
     expect(document.querySelectorAll('.nf-nightfall-card').length).toBe(3);
 
+    const pillarCard = document.querySelector('#hero-pillar-scorecard');
+    const downloadsSection = document.querySelector('#platform-downloads');
+    expect(pillarCard).toBeTruthy();
+    expect(downloadsSection).toBeTruthy();
+    expect(
+      Boolean(
+        pillarCard &&
+          downloadsSection &&
+          pillarCard.compareDocumentPosition(downloadsSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+
     expect(document.querySelector('#hero-launch-console')).toBeTruthy();
-    expect(document.querySelector('#hero-download-installer')).toBeTruthy();
     expect(document.querySelector('#download-link-mac-arm64')).toBeTruthy();
     expect(document.querySelector('#download-link-mac-x64')).toBeTruthy();
     expect(document.querySelector('#download-link-win-x64')).toBeTruthy();
