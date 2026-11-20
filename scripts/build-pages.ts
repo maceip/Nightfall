@@ -72,9 +72,6 @@ async function main(): Promise<void> {
     'captured-bootstrap.json',
     'favicon.png',
     'og-card.png',
-    'pillar-defense.webp',
-    'pillar-red-team.webp',
-    'pillar-scorecard.webp',
   ];
 
   for (const rel of requiredAssets) {

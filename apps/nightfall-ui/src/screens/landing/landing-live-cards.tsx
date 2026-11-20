@@ -1,4 +1,9 @@
 import React from 'react';
+import {
+  DefensePatchSchematic,
+  PreMergeGateSchematic,
+  ScopedProbeSchematic,
+} from '@nightfall/ui-kit';
 import type { PrimarySection } from '../../hooks/use-nightfall-router.js';
 
 export type LandingLaunchTarget = Extract<
@@ -9,39 +14,32 @@ export type LandingLaunchTarget = Extract<
 type LandingPillarCardSpec = {
   id: 'defense' | 'red-team' | 'scorecard';
   target: LandingLaunchTarget;
-  imageSrc: string;
-  imageAlt: string;
   title: string;
   body: string;
+  renderSchematic: () => React.ReactElement;
 };
 
 const PILLAR_CARDS: ReadonlyArray<LandingPillarCardSpec> = [
   {
     id: 'defense',
     target: 'fixes',
-    imageSrc: './pillar-defense.webp',
-    imageAlt:
-      'Glass sandbox enclosing an exploit lightning fracture flowing through a cyan Git branch merge into verified emerald patch bars',
     title: 'Prove exploits before patching.',
     body: 'Reproduces real attack paths in LiteBox and stages tested branches.',
+    renderSchematic: () => <DefensePatchSchematic />,
   },
   {
     id: 'red-team',
     target: 'red-team',
-    imageSrc: './pillar-red-team.webp',
-    imageAlt:
-      'Shield gate confining cyan network routes to staging nodes inside a scope ring while padlocks block off-scope branches',
     title: 'Probe staging without scope creep.',
     body: 'Signed manifests confine HTTP and WebSocket tests to approved routes.',
+    renderSchematic: () => <ScopedProbeSchematic />,
   },
   {
     id: 'scorecard',
     target: 'scorecard',
-    imageSrc: './pillar-scorecard.webp',
-    imageAlt:
-      'CI pipeline rail where a cyan scanner gate quarantines an unlocked key-bearing package before the Git merge node',
     title: 'Block risky CI workflows pre-merge.',
     body: 'Continuous Scorecard checks catch unpinned actions and broad tokens.',
+    renderSchematic: () => <PreMergeGateSchematic />,
   },
 ];
 
@@ -61,14 +59,9 @@ export function LandingLiveHeroGrid({
           className="nf-nightfall-card group flex h-full w-full cursor-pointer flex-col rounded-2xl p-3.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-blue md:p-4"
         >
           <div className="nf-nightfall-stage w-full overflow-hidden rounded-xl">
-            <img
-              src={card.imageSrc}
-              alt={card.imageAlt}
-              width={1280}
-              height={715}
-              decoding="async"
-              className="block aspect-16/10 w-full object-cover transition-transform duration-200 ease-out group-hover:scale-[1.02] motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-            />
+            <div className="transition-transform duration-200 ease-out group-hover:scale-[1.015] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
+              {card.renderSchematic()}
+            </div>
           </div>
 
           <div className="flex flex-1 flex-col gap-1.5 px-1 pt-4 pb-1">

@@ -39,6 +39,7 @@ import {
 import { cn } from '../../lib/utils.js';
 
 export * from './nightfall-brand-icons.js';
+export * from './nightfall-landing-schematics.js';
 
 export type NightfallIconProps = {
   size?: number;
