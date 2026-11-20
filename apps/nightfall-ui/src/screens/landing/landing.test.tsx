@@ -85,10 +85,11 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
     render(<NightfallShowcaseRoot />);
 
     expect(screen.getByTestId('nightfall-landing-page')).toBeTruthy();
-    expect(screen.getByText('Only ship fixes proven against real exploits.')).toBeTruthy();
+    expect(screen.getByText('Persistent Red Teaming.')).toBeTruthy();
     expect(screen.getByText('Prove exploits before patching.')).toBeTruthy();
     expect(screen.getByText('Probe staging without scope creep.')).toBeTruthy();
     expect(screen.getByText('Block risky CI workflows pre-merge.')).toBeTruthy();
+    expect(document.querySelector('#hero-product-preview')).toBeNull();
 
     const defenseImg = document.querySelector('#hero-pillar-defense img') as HTMLImageElement | null;
     const redTeamImg = document.querySelector('#hero-pillar-red-team img') as HTMLImageElement | null;

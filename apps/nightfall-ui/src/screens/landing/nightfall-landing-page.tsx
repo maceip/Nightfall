@@ -18,7 +18,6 @@ import { LandingLiveHeroGrid, type LandingLaunchTarget } from './landing-live-ca
 import {
   LandingFooterSection,
   LandingPlatformDownloadsSection,
-  LandingWorkbenchPreviewSection,
 } from './landing-sections.js';
 import {
   detectClientPlatformSync,
@@ -41,12 +40,12 @@ const styles: Record<string, CSSProperties> = {
     maxWidth: 1160,
     width: '100%',
     marginInline: 'auto',
-    paddingBlock: '40px 32px',
+    paddingBlock: '48px 32px',
   },
-  pageBodyMobile: { width: '100%', paddingBlock: '20px 28px' },
-  heroHeadlineWrap: { maxWidth: 760, marginInline: 'auto' },
-  heroHeadingDesktop: { fontSize: 'clamp(2.4rem, 4.5vw, 3.5rem)', lineHeight: 1.08 },
-  heroHeadingMobile: { fontSize: '2.1rem', lineHeight: 1.1 },
+  pageBodyMobile: { width: '100%', paddingBlock: '24px 28px' },
+  heroHeadlineWrap: { maxWidth: 820, marginInline: 'auto' },
+  heroHeadingDesktop: { fontSize: 'clamp(2.75rem, 5.2vw, 4.2rem)', lineHeight: 1.05 },
+  heroHeadingMobile: { fontSize: '2.35rem', lineHeight: 1.08 },
 };
 
 export function NightfallLandingPage({
@@ -123,12 +122,12 @@ export function NightfallLandingPage({
                       id="hero-heading"
                       style={isMobile ? styles.heroHeadingMobile : styles.heroHeadingDesktop}
                     >
-                      Only ship fixes proven against real exploits.
+                      Persistent Red Teaming.
                     </span>
                   </Heading>
                 </div>
-                <p className="m-0 max-w-[46ch] text-center text-[16.5px] leading-[1.5] text-pretty text-ink-secondary md:text-[18.5px]">
-                  Autonomous red-teaming, sandboxed exploit proof, and verified Git patches.
+                <p className="m-0 max-w-[46ch] text-center text-[17px] leading-[1.5] text-pretty text-ink-secondary md:text-[19px]">
+                  Continuous offensive agents that reproduce real exploits and ship verified patches.
                 </p>
               </VStack>
 
@@ -175,10 +174,6 @@ export function NightfallLandingPage({
             </VStack>
           </section>
 
-          <LandingWorkbenchPreviewSection
-            colorMode={colorMode}
-            onOpenConsole={() => onLaunchConsole('findings')}
-          />
           <LandingPlatformDownloadsSection
             installers={plan.allInstallers}
             detectedPlatform={detectedPlatform}

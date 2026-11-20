@@ -72,8 +72,6 @@ async function main(): Promise<void> {
     'captured-bootstrap.json',
     'favicon.png',
     'og-card.png',
-    'preview-console-light.png',
-    'preview-console-dark.png',
     'pillar-defense.webp',
     'pillar-red-team.webp',
     'pillar-scorecard.webp',

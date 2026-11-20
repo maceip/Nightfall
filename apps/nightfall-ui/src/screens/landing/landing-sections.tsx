@@ -1,4 +1,4 @@
-import React, { useState, type CSSProperties } from 'react';
+import React from 'react';
 import {
   AstryxButton,
   AstryxSegmentedControl,
@@ -16,65 +16,6 @@ import {
   type PlatformInstallerSpec,
 } from './platform-downloads.js';
 
-const previewWindowStyle: CSSProperties = {
-  width: '100%',
-  padding: 6,
-  borderRadius: 16,
-  backgroundColor: 'var(--nf-card-tint-bg)',
-  border: '1px solid var(--nf-card-tint-border)',
-  boxShadow: '0 20px 56px rgba(0, 0, 0, 0.16)',
-  transition: 'transform 180ms ease-out',
-  boxSizing: 'border-box',
-};
-
-const previewWindowActiveStyle: CSSProperties = {
-  border: '1px solid var(--nf-card-tint-border-hover)',
-  transform: 'translateY(-2px)',
-};
-
-export function LandingWorkbenchPreviewSection({
-  colorMode,
-  onOpenConsole,
-}: {
-  colorMode: 'dark' | 'light';
-  onOpenConsole: () => void;
-}): React.ReactElement {
-  const [hovered, setHovered] = useState(false);
-  const previewSrc =
-    colorMode === 'dark' ? './preview-console-dark.png' : './preview-console-light.png';
-
-  return (
-    <section aria-label="Nightfall Web Console preview" className="pt-10 md:pt-12">
-      <button
-        id="hero-product-preview"
-        type="button"
-        aria-label="Open interactive Nightfall Web Console"
-        className="block w-full cursor-pointer rounded-2xl border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-blue"
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        onFocus={() => setHovered(true)}
-        onBlur={() => setHovered(false)}
-        onClick={onOpenConsole}
-      >
-        <div
-          style={{
-            ...previewWindowStyle,
-            ...(hovered ? previewWindowActiveStyle : null),
-          }}
-        >
-          <img
-            src={previewSrc}
-            alt="Nightfall unified security queue linking exploit traces, root-cause findings, and verified patches"
-            width={1440}
-            height={900}
-            className="block h-auto w-full rounded-[11px] border border-hairline"
-          />
-        </div>
-      </button>
-    </section>
-  );
-}
-
 export function LandingPlatformDownloadsSection({
   installers,
   detectedPlatform,
@@ -83,7 +24,7 @@ export function LandingPlatformDownloadsSection({
   detectedPlatform: DesktopPlatformId;
 }): React.ReactElement {
   return (
-    <section id="platform-downloads" aria-labelledby="downloads-heading" className="pt-10">
+    <section id="platform-downloads" aria-labelledby="downloads-heading" className="pt-10 md:pt-12">
       <VStack gap={3}>
         <HStack justify="between" vAlign="center" wrap="wrap" gap={2}>
           <h2 id="downloads-heading" className="m-0 text-base font-semibold text-ink">
