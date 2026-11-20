@@ -98,6 +98,16 @@ export function YamlCodeViewer({
           </div>
         ))}
       </pre>
+      {onChange ? (
+        <textarea
+          id={textareaId}
+          tabIndex={-1}
+          value={yamlText}
+          onChange={(e) => onChange(e.target.value)}
+          aria-label={ariaLabel}
+          className="sr-only"
+        />
+      ) : null}
     </div>
   );
 }
