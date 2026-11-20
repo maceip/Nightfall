@@ -86,6 +86,11 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
 
     expect(screen.getByTestId('nightfall-landing-page')).toBeTruthy();
     expect(screen.getByText('Persistent Red Teaming.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'AI-managed pen tests that continuously attack each dependency using real exploits to ship verified patches.',
+      ),
+    ).toBeTruthy();
     expect(screen.getByText('Prove exploits before patching.')).toBeTruthy();
     expect(screen.getByText('Probe staging without scope creep.')).toBeTruthy();
     expect(screen.getByText('Block risky CI workflows pre-merge.')).toBeTruthy();

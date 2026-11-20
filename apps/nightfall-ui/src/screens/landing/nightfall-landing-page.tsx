@@ -126,8 +126,8 @@ export function NightfallLandingPage({
                     </span>
                   </Heading>
                 </div>
-                <p className="m-0 max-w-[46ch] text-center text-[17px] leading-[1.5] text-pretty text-ink-secondary md:text-[19px]">
-                  Continuous offensive agents that reproduce real exploits and ship verified patches.
+                <p className="m-0 max-w-[54ch] text-center text-[17px] leading-[1.5] text-balance text-ink-secondary md:text-[19px]">
+                  AI-managed pen tests that continuously attack each dependency using real exploits to ship verified patches.
                 </p>
               </VStack>
 
