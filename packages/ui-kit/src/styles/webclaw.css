@@ -86,35 +86,14 @@
     --nf-syn-str: #116329;
     --nf-syn-num: #0550AE;
 
-    --nf-card-tint-bg: #EAF2FB;
-    --nf-card-tint-bg-hover: #E1ECF9;
-    --nf-card-tint-border: #C2D7EE;
-    --nf-card-tint-border-hover: #5AA3E8;
-    --nf-card-tint-title: #0B1728;
-    --nf-card-tint-body: #2F4762;
-    --nf-stage-tint-bg: #F7FAFE;
-    --nf-stage-tint-border: #C7DBF0;
-
-    --nf-schem-bg: #F7FAFE;
-    --nf-schem-grid: #5B82AA;
-    --nf-schem-horizon: #0284C7;
-    --nf-schem-frame: #ACC6E2;
-    --nf-schem-bracket: #4B749F;
-    --nf-schem-kicker: #476788;
-    --nf-schem-surface: #FFFFFF;
-    --nf-schem-surface-accent: #F2F8FF;
-    --nf-schem-surface-muted: #EEF3F9;
-    --nf-schem-surface-danger: #FFF5F5;
-    --nf-schem-border: #C6D9EC;
-    --nf-schem-divider: #E1ECF7;
-    --nf-schem-ink: #0F1E30;
-    --nf-schem-ink-muted: #4A6582;
-    --nf-schem-cyan: #0284C7;
-    --nf-schem-cyan-ink: #0369A1;
-    --nf-schem-pass: #059669;
-    --nf-schem-pass-ink: #065F46;
-    --nf-schem-fail: #DC2626;
-    --nf-schem-fail-ink: #991B1B;
+    --nf-stage-tint-bg: #F1F3F6;
+    --nf-stage-tint-bg-hover: #EAEFF5;
+    --nf-stage-tint-border: #E1E6EE;
+    --nf-stage-tint-border-hover: #BAC6D8;
+    --nf-vignette-bg: #FFFFFF;
+    --nf-vignette-header-bg: #FAFBFD;
+    --nf-vignette-border: #DCE2EC;
+    --nf-vignette-shadow: 0 10px 26px -12px rgba(15, 23, 42, 0.12), 0 1px 2px rgba(15, 23, 42, 0.04);
   }
 
   html[data-theme="dark"] {
@@ -156,35 +135,14 @@
     --nf-syn-str: #86EFAC;
     --nf-syn-num: #93C5FD;
 
-    --nf-card-tint-bg: #0D192B;
-    --nf-card-tint-bg-hover: #112138;
-    --nf-card-tint-border: rgba(110, 206, 250, 0.22);
-    --nf-card-tint-border-hover: rgba(110, 206, 250, 0.50);
-    --nf-card-tint-title: #F2F8FD;
-    --nf-card-tint-body: #AFC5DC;
-    --nf-stage-tint-bg: #08111D;
-    --nf-stage-tint-border: rgba(125, 211, 252, 0.18);
-
-    --nf-schem-bg: #08111D;
-    --nf-schem-grid: #7EA1C4;
-    --nf-schem-horizon: #38BDF8;
-    --nf-schem-frame: #1E334D;
-    --nf-schem-bracket: #4B6E94;
-    --nf-schem-kicker: #6F8FB2;
-    --nf-schem-surface: #0D1726;
-    --nf-schem-surface-accent: #0E1C2E;
-    --nf-schem-surface-muted: #0B1320;
-    --nf-schem-surface-danger: #17111A;
-    --nf-schem-border: #253C59;
-    --nf-schem-divider: #1B2D45;
-    --nf-schem-ink: #E6F0FA;
-    --nf-schem-ink-muted: #8DA5C0;
-    --nf-schem-cyan: #38BDF8;
-    --nf-schem-cyan-ink: #7DD3FC;
-    --nf-schem-pass: #34D399;
-    --nf-schem-pass-ink: #86EFAC;
-    --nf-schem-fail: #F87171;
-    --nf-schem-fail-ink: #FCA5A5;
+    --nf-stage-tint-bg: #171B21;
+    --nf-stage-tint-bg-hover: #1C222A;
+    --nf-stage-tint-border: rgba(255, 255, 255, 0.10);
+    --nf-stage-tint-border-hover: rgba(255, 255, 255, 0.22);
+    --nf-vignette-bg: #1E242C;
+    --nf-vignette-header-bg: #232A34;
+    --nf-vignette-border: rgba(255, 255, 255, 0.13);
+    --nf-vignette-shadow: 0 14px 30px -12px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
 
   html,
@@ -219,31 +177,28 @@
     box-shadow: var(--nf-card-highlight);
   }
 
-  .nf-nightfall-card {
-    background-color: var(--nf-card-tint-bg);
-    border: 1px solid var(--nf-card-tint-border);
-    box-shadow: var(--nf-card-highlight);
-    transition: transform 180ms ease-out;
-  }
-
-  .nf-nightfall-card:hover,
-  .nf-nightfall-card:focus-visible {
-    background-color: var(--nf-card-tint-bg-hover);
-    border-color: var(--nf-card-tint-border-hover);
-    transform: translateY(-2px);
-  }
-
-  .nf-nightfall-card-title {
-    color: var(--nf-card-tint-title);
-  }
-
-  .nf-nightfall-card-body {
-    color: var(--nf-card-tint-body);
-  }
-
   .nf-nightfall-stage {
     background-color: var(--nf-stage-tint-bg);
     border: 1px solid var(--nf-stage-tint-border);
+    transition: transform 180ms ease-out;
+  }
+
+  .nf-nightfall-card:hover .nf-nightfall-stage,
+  .nf-nightfall-card:focus-visible .nf-nightfall-stage {
+    background-color: var(--nf-stage-tint-bg-hover);
+    border-color: var(--nf-stage-tint-border-hover);
+    transform: translateY(-2px);
+  }
+
+  .nf-nightfall-vignette {
+    background-color: var(--nf-vignette-bg);
+    border: 1px solid var(--nf-vignette-border);
+    box-shadow: var(--nf-vignette-shadow);
+  }
+
+  .nf-nightfall-vignette-header {
+    background-color: var(--nf-vignette-header-bg);
+    border-bottom: 1px solid var(--nf-vignette-border);
   }
 
   .wc-drag {

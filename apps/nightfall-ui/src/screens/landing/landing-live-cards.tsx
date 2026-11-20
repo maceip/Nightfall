@@ -49,26 +49,24 @@ export function LandingLiveHeroGrid({
   onLaunchConsole: (target: LandingLaunchTarget) => void;
 }): React.ReactElement {
   return (
-    <div className="mt-3 grid w-full grid-cols-1 gap-5 md:grid-cols-3 md:gap-6">
+    <div className="mt-3 grid w-full grid-cols-1 gap-6 md:grid-cols-3 md:gap-7">
       {PILLAR_CARDS.map((card) => (
         <button
           key={card.id}
           id={`hero-pillar-${card.id}`}
           type="button"
           onClick={() => onLaunchConsole(card.target)}
-          className="nf-nightfall-card group flex h-full w-full cursor-pointer flex-col rounded-2xl p-3.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-blue md:p-4"
+          className="nf-nightfall-card group flex h-full w-full cursor-pointer flex-col rounded-2xl border-0 bg-transparent p-0 text-left focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent-blue"
         >
-          <div className="nf-nightfall-stage w-full overflow-hidden rounded-xl">
-            <div className="transition-transform duration-200 ease-out group-hover:scale-[1.015] motion-reduce:transition-none motion-reduce:group-hover:scale-100">
-              {card.renderSchematic()}
-            </div>
+          <div className="nf-nightfall-stage flex h-[212px] w-full items-center justify-center overflow-hidden rounded-2xl px-4 py-5 md:px-5">
+            {card.renderSchematic()}
           </div>
 
-          <div className="flex flex-1 flex-col gap-1.5 px-1 pt-4 pb-1">
-            <h2 className="nf-nightfall-card-title m-0 text-[18px] leading-[1.28] font-semibold text-balance">
+          <div className="flex flex-1 flex-col gap-1.5 pt-4">
+            <h2 className="m-0 text-[18px] leading-[1.28] font-semibold text-balance text-ink">
               {card.title}
             </h2>
-            <p className="nf-nightfall-card-body m-0 text-[15px] leading-[1.5] font-normal text-pretty">
+            <p className="m-0 text-[15px] leading-[1.5] font-normal text-pretty text-ink-secondary">
               {card.body}
             </p>
           </div>

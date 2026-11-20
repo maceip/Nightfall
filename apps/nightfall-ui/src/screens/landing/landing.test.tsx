@@ -96,12 +96,12 @@ describe('Nightfall platform detection & Outrider-flow landing showcase', () => 
     expect(screen.getByText('Block risky CI workflows pre-merge.')).toBeTruthy();
     expect(document.querySelector('#hero-product-preview')).toBeNull();
 
-    const defenseSvg = document.querySelector('#hero-pillar-defense svg[role="img"]');
-    const redTeamSvg = document.querySelector('#hero-pillar-red-team svg[role="img"]');
-    const scorecardSvg = document.querySelector('#hero-pillar-scorecard svg[role="img"]');
-    expect(defenseSvg).toBeTruthy();
-    expect(redTeamSvg).toBeTruthy();
-    expect(scorecardSvg).toBeTruthy();
+    const defenseStage = document.querySelector('#hero-pillar-defense [role="img"]');
+    const redTeamStage = document.querySelector('#hero-pillar-red-team [role="img"]');
+    const scorecardStage = document.querySelector('#hero-pillar-scorecard [role="img"]');
+    expect(defenseStage).toBeTruthy();
+    expect(redTeamStage).toBeTruthy();
+    expect(scorecardStage).toBeTruthy();
     expect(document.querySelectorAll('.nf-nightfall-card').length).toBe(3);
 
     const pillarCard = document.querySelector('#hero-pillar-scorecard');
